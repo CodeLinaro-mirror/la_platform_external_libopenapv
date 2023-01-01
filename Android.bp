@@ -36,6 +36,7 @@ cc_library_static {
         "src/oapv.c",
         "src/oapv_bs.c",
         "src/oapv_metadata.c",
+        "src/oapv_param.c",
         "src/oapv_port.c",
         "src/oapv_rc.c",
         "src/oapv_sad.c",
