@@ -1,0 +1,148 @@
+package {
+    default_applicable_licenses: ["external_libapv_license"],
+}
+
+// Added automatically by a large-scale-change
+// See: http://go/android-license-faq
+license {
+    name: "external_libapv_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-BSD",
+    ],
+    license_text: [
+        "LICENSE",
+    ],
+}
+
+cc_library_headers {
+    name: "libopenapv_headers",
+    export_include_dirs: [
+        "inc",
+    ],
+    min_sdk_version: "apex_inherit",
+}
+
+cc_library_static {
+    name: "libopenapv",
+    vendor_available: true,
+    host_supported: true,
+
+    shared_libs: [
+        "liblog",
+    ],
+
+    srcs: [
+        "src/oapv.c",
+        "src/oapv_bs.c",
+        "src/oapv_metadata.c",
+        "src/oapv_port.c",
+        "src/oapv_rc.c",
+        "src/oapv_sad.c",
+        "src/oapv_tbl.c",
+        "src/oapv_tpool.c",
+        "src/oapv_tq.c",
+        "src/oapv_util.c",
+        "src/oapv_vlc.c",
+    ],
+
+    local_include_dirs: [
+        "inc",
+        "src",
+    ],
+
+    export_include_dirs: [
+        "inc",
+    ],
+
+    cflags: [
+        "-Wno-multichar",
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+        "-Wno-pointer-sign",
+        "-Wno-reorder",
+        "-Wno-#warnings",
+        "-Wuninitialized",
+        "-Wno-self-assign",
+        "-Wno-implicit-fallthrough",
+        "-Wtautological-pointer-compare",
+        "-Wimplicit-function-declaration",
+        "-Wunused-but-set-variable",
+        "-ftree-vectorize",
+        "-finline-functions",
+    ],
+
+    arch: {
+        arm64: {
+            local_include_dirs: [
+                "src/neon",
+            ],
+
+            srcs: [
+                "src/neon/oapv_sad_neon.c",
+                "src/neon/oapv_tq_neon.c",
+            ],
+        },
+
+        arm: {
+
+            cflags: [
+                "-Wno-implicit-int",
+                "-Wno-ignored-qualifiers",
+                "-Wno-implicit-function-declaration",
+            ],
+        },
+
+        x86_64: {
+            local_include_dirs: [
+                "src/avx",
+                "src/sse",
+            ],
+
+            cflags: [
+                "-mavx2",
+            ],
+
+            srcs: [
+                "src/avx/oapv_sad_avx.c",
+                "src/avx/oapv_tq_avx.c",
+                "src/sse/oapv_sad_sse.c",
+                "src/sse/oapv_tq_sse.c",
+            ],
+        },
+
+        x86: {
+            local_include_dirs: [
+                "src/avx",
+                "src/sse",
+            ],
+
+            cflags: [
+                "-mavx2",
+            ],
+            srcs: [
+                "src/avx/oapv_sad_avx.c",
+                "src/avx/oapv_tq_avx.c",
+                "src/sse/oapv_sad_sse.c",
+                "src/sse/oapv_tq_sse.c",
+            ],
+        },
+    },
+
+    sanitize: {
+        integer_overflow: true,
+        misc_undefined: ["bounds"],
+        cfi: true,
+
+        config: {
+            cfi_assembly_support: true,
+        },
+    },
+
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media.swcodec",
+    ],
+    min_sdk_version: "apex_inherit",
+}
