@@ -56,6 +56,7 @@ cc_library_static {
     ],
 
     cflags: [
+        "-DOAPV_STATIC_DEFINE",
         "-Wno-multichar",
         "-Wall",
         "-Werror",
