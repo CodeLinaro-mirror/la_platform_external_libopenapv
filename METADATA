@@ -1,0 +1,16 @@
+name: "libopenapv"
+description:
+    "Open source APV Video Codec implementation"
+
+third_party {
+homepage: "https://github.com/openapv/openapv"
+  identifier {
+    type: "Git"
+    value: "https://github.com/openapv/openapv.git"
+    primary_source: true
+    version: "v0.1.4"
+  }
+  version: "v0.1.4"
+  last_upgrade_date { year: 2024 month: 10 day: 11 }
+  license_type: NOTICE
+}
