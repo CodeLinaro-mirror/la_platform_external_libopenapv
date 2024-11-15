@@ -87,11 +87,8 @@ cc_library_static {
         },
 
         arm: {
-
             cflags: [
-                "-Wno-implicit-int",
                 "-Wno-ignored-qualifiers",
-                "-Wno-implicit-function-declaration",
             ],
         },
 
