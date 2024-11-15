@@ -147,3 +147,25 @@ cc_library_static {
     ],
     min_sdk_version: "apex_inherit",
 }
+
+cc_fuzz {
+    name: "oapv_fuzzer",
+    host_supported: true,
+
+    srcs: [
+        "android/oapv_fuzzer.c",
+    ],
+
+    cflags: [
+        "-DOAPV_STATIC_DEFINE",
+    ],
+
+    static_libs: [
+        "libopenapv",
+    ],
+
+    fuzz_config: {
+        cc: ["kyslov@google.com"],
+        componentid: 25690,
+    },
+}
