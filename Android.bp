@@ -132,6 +132,7 @@ cc_library_static {
         integer_overflow: true,
         misc_undefined: ["bounds"],
         cfi: true,
+        scs: true,
 
         config: {
             cfi_assembly_support: true,
