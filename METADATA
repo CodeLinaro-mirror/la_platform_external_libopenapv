@@ -9,13 +9,13 @@ third_party {
   last_upgrade_date {
     year: 2024
     month: 11
-    day: 4
+    day: 22
   }
   homepage: "https://github.com/openapv/openapv"
   identifier {
     type: "Git"
     value: "https://github.com/openapv/openapv.git"
-    version: "v0.1.8"
+    version: "v0.1.9.2"
     primary_source: true
   }
 }
