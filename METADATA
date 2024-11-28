@@ -1,16 +1,21 @@
-name: "libopenapv"
-description:
-    "Open source APV Video Codec implementation"
+# This project was upgraded with external_updater.
+# Usage: tools/external_updater/updater.sh update external/libopenapv
+# For more info, check https://cs.android.com/android/platform/superproject/main/+/main:tools/external_updater/README.md
 
+name: "libopenapv"
+description: "Open source APV Video Codec implementation"
 third_party {
-homepage: "https://github.com/openapv/openapv"
+  license_type: NOTICE
+  last_upgrade_date {
+    year: 2024
+    month: 11
+    day: 22
+  }
+  homepage: "https://github.com/openapv/openapv"
   identifier {
     type: "Git"
     value: "https://github.com/openapv/openapv.git"
+    version: "v0.1.9.2"
     primary_source: true
-    version: "v0.1.4"
   }
-  version: "v0.1.4"
-  last_upgrade_date { year: 2024 month: 10 day: 11 }
-  license_type: NOTICE
 }

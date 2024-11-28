@@ -86,8 +86,8 @@ typedef s32      dpel;
         }                  \
     }
 
-void* oapv_malloc_align32(int size);
-void  oapv_mfree_align32(void* p);
+void *oapv_malloc_align32(int size);
+void oapv_mfree_align32(void *p);
 
 #define oapv_mcpy(dst, src, size)    memcpy((dst), (src), (size))
 #define oapv_mset(dst, v, size)      memset((dst), (v), (size))
@@ -95,7 +95,7 @@ void  oapv_mfree_align32(void* p);
 #define oapv_mset_x128(dst, v, size) memset((dst), (v), (size))
 #define oapv_mcmp(dst, src, size)    memcmp((dst), (src), (size))
 
-static __inline void oapv_mset_16b(s16* dst, s16 v, int cnt)
+static __inline void oapv_mset_16b(s16 *dst, s16 v, int cnt)
 {
     int i;
     for(i = 0; i < cnt; i++)
@@ -105,10 +105,10 @@ static __inline void oapv_mset_16b(s16* dst, s16 v, int cnt)
 /*****************************************************************************
  * trace and assert
  *****************************************************************************/
-void oapv_trace0(char* filename, int line, const char* fmt, ...);
-void oapv_trace_line(char* pre);
-#ifndef AVP1_TRACE
-#define AVP1_TRACE 0
+void oapv_trace0(char *filename, int line, const char *fmt, ...);
+void oapv_trace_line(char *pre);
+#ifndef OAPV_TRACE
+#define OAPV_TRACE 0
 #endif
 
 /* trace function */
@@ -127,44 +127,39 @@ void oapv_trace_line(char* pre);
     {}
 #endif
 #if defined(__GNUC__)
-#define oapv_print(args...) oapv_trace0(NULL, -1, args)
+#define oapv_print(args, ...) oapv_trace0(NULL, -1, args)
 #else
 #define oapv_print(args, ...) oapv_trace0(NULL, -1, args, __VA_ARGS__)
 #endif
 
 /* assert function */
 #include <assert.h>
-#define oapv_assert(x) \
-    {                  \
-        if(!(x)) {     \
-            assert(x); \
-        }              \
-    }
-#define oapv_assert_r(x) \
-    {                    \
-        if(!(x)) {       \
-            assert(x);   \
-            return;      \
-        }                \
+#define oapv_assert(x) assert(x)
+#define oapv_assert_r(x)     \
+    {                        \
+        if(!(x)) {           \
+            oapv_assert(x);  \
+            return;          \
+        }                    \
     }
 #define oapv_assert_rv(x, r) \
     {                        \
         if(!(x)) {           \
-            assert(x);       \
+            oapv_assert(x);  \
             return (r);      \
         }                    \
     }
-#define oapv_assert_g(x, g) \
-    {                       \
-        if(!(x)) {          \
-            assert(x);      \
-            goto g;         \
-        }                   \
+#define oapv_assert_g(x, g)  \
+    {                        \
+        if(!(x)) {           \
+            oapv_assert(x);  \
+            goto g;          \
+        }                    \
     }
 #define oapv_assert_gv(x, r, v, g) \
     {                              \
         if(!(x)) {                 \
-            assert(x);             \
+            oapv_assert(x);        \
             (r) = (v);             \
             goto g;                \
         }                          \
@@ -174,7 +169,7 @@ void oapv_trace_line(char* pre);
     defined(_M_X64) || defined(__amd64__) || defined(_M_AMD64) ||   \
     defined(__i386__)
 #define X86_SSE 1
-#elif defined(__aarch64__) || defined(__ARM_NEON) || defined(__ARM_NEON__)
+#elif defined(__aarch64__)
 #define ARM_NEON 1
 #endif
 
@@ -189,6 +184,10 @@ void oapv_trace_line(char* pre);
 #endif
 #endif
 
+#if ARM_NEON
+#include <arm_neon.h>
+#endif
+
 /* Buffer Alignement */
 #if defined(_WIN32) && !defined(__GNUC__)
 #define DECLARE_ALIGNED(var, n) __declspec(align(n)) var
@@ -199,77 +198,5 @@ void oapv_trace_line(char* pre);
 #define ALIGNED_16(var)  DECLARE_ALIGNED(var, 16)
 #define ALIGNED_32(var)  DECLARE_ALIGNED(var, 32)
 #define ALIGNED_128(var) DECLARE_ALIGNED(var, 128)
-
-/* For debugging (START) */
-#define ENC_DEC_TRACE    0
-#if ENC_DEC_TRACE
-#if defined(__GNUC__)
-#pragma message "warning! syntax trace is on"
-#else
-#pragma message("warning! syntax trace is on")
-#endif
-#endif
-
-#if ENC_DEC_TRACE
-#define TRACE_REMOVE_COUNTER 0  // Remove trace counter
-#define TRACE_HLS            1  // Trace Header.
-#define TRACE_COEF_BIN       0
-
-extern FILE* fp_trace;
-extern int   fp_trace_print;
-extern int   fp_trace_counter;
-
-#define OAPV_TRACE_SET(A)  \
-    {                      \
-        fp_trace_print = A \
-    }
-#define OAPV_TRACE_STR(STR)               \
-    {                                     \
-        if(fp_trace_print) {              \
-            fprintf(fp_trace, "%s", STR); \
-            fflush(fp_trace);             \
-        }                                 \
-    }
-#define OAPV_TRACE_DOUBLE(DOU)            \
-    {                                     \
-        if(fp_trace_print) {              \
-            fprintf(fp_trace, "%g", DOU); \
-            fflush(fp_trace);             \
-        }                                 \
-    }
-#define OAPV_TRACE_INT(INT)                \
-    {                                      \
-        if(fp_trace_print) {               \
-            fprintf(fp_trace, "%d ", INT); \
-            fflush(fp_trace);              \
-        }                                  \
-    }
-#define OAPV_TRACE_INT_HEX(INT)              \
-    {                                        \
-        if(fp_trace_print) {                 \
-            fprintf(fp_trace, "0x%x ", INT); \
-            fflush(fp_trace);                \
-        }                                    \
-    }
-#if TRACE_REMOVE_COUNTER
-#define OAPV_TRACE_COUNTER
-#else
-#define OAPV_TRACE_COUNTER              \
-    OAPV_TRACE_INT(fp_trace_counter++); \
-    OAPV_TRACE_STR("\t")
-#endif
-#define OAPV_TRACE_FLUSH \
-    if(fp_trace_print)   \
-    fflush(fp_trace)
-#else
-#define OAPV_TRACE_SET(A)
-#define OAPV_TRACE_STR(str)
-#define OAPV_TRACE_DOUBLE(DOU)
-#define OAPV_TRACE_INT(INT)
-#define OAPV_TRACE_INT_HEX(INT)
-#define OAPV_TRACE_COUNTER
-#define OAPV_TRACE_FLUSH
-#endif
-/* For debugging (END) */
 
 #endif /* _OAPV_PORT_H_ */
