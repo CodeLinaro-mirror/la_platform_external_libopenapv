@@ -86,8 +86,8 @@ typedef s32      dpel;
         }                  \
     }
 
-void* oapv_malloc_align32(int size);
-void  oapv_mfree_align32(void* p);
+void *oapv_malloc_align32(int size);
+void oapv_mfree_align32(void *p);
 
 #define oapv_mcpy(dst, src, size)    memcpy((dst), (src), (size))
 #define oapv_mset(dst, v, size)      memset((dst), (v), (size))
@@ -95,7 +95,7 @@ void  oapv_mfree_align32(void* p);
 #define oapv_mset_x128(dst, v, size) memset((dst), (v), (size))
 #define oapv_mcmp(dst, src, size)    memcmp((dst), (src), (size))
 
-static __inline void oapv_mset_16b(s16* dst, s16 v, int cnt)
+static __inline void oapv_mset_16b(s16 *dst, s16 v, int cnt)
 {
     int i;
     for(i = 0; i < cnt; i++)
@@ -105,8 +105,8 @@ static __inline void oapv_mset_16b(s16* dst, s16 v, int cnt)
 /*****************************************************************************
  * trace and assert
  *****************************************************************************/
-void oapv_trace0(char* filename, int line, const char* fmt, ...);
-void oapv_trace_line(char* pre);
+void oapv_trace0(char *filename, int line, const char *fmt, ...);
+void oapv_trace_line(char *pre);
 #ifndef OAPV_TRACE
 #define OAPV_TRACE 0
 #endif
@@ -127,44 +127,39 @@ void oapv_trace_line(char* pre);
     {}
 #endif
 #if defined(__GNUC__)
-#define oapv_print(args...) oapv_trace0(NULL, -1, args)
+#define oapv_print(args, ...) oapv_trace0(NULL, -1, args)
 #else
 #define oapv_print(args, ...) oapv_trace0(NULL, -1, args, __VA_ARGS__)
 #endif
 
 /* assert function */
 #include <assert.h>
-#define oapv_assert(x) \
-    {                  \
-        if(!(x)) {     \
-            assert(x); \
-        }              \
-    }
-#define oapv_assert_r(x) \
-    {                    \
-        if(!(x)) {       \
-            assert(x);   \
-            return;      \
-        }                \
+#define oapv_assert(x) assert(x)
+#define oapv_assert_r(x)     \
+    {                        \
+        if(!(x)) {           \
+            oapv_assert(x);  \
+            return;          \
+        }                    \
     }
 #define oapv_assert_rv(x, r) \
     {                        \
         if(!(x)) {           \
-            assert(x);       \
+            oapv_assert(x);  \
             return (r);      \
         }                    \
     }
-#define oapv_assert_g(x, g) \
-    {                       \
-        if(!(x)) {          \
-            assert(x);      \
-            goto g;         \
-        }                   \
+#define oapv_assert_g(x, g)  \
+    {                        \
+        if(!(x)) {           \
+            oapv_assert(x);  \
+            goto g;          \
+        }                    \
     }
 #define oapv_assert_gv(x, r, v, g) \
     {                              \
         if(!(x)) {                 \
-            assert(x);             \
+            oapv_assert(x);        \
             (r) = (v);             \
             goto g;                \
         }                          \
@@ -174,7 +169,7 @@ void oapv_trace_line(char* pre);
     defined(_M_X64) || defined(__amd64__) || defined(_M_AMD64) ||   \
     defined(__i386__)
 #define X86_SSE 1
-#elif defined(__aarch64__) || defined(__ARM_NEON) || defined(__ARM_NEON__)
+#elif defined(__aarch64__)
 #define ARM_NEON 1
 #endif
 
@@ -187,6 +182,10 @@ void oapv_trace_line(char* pre);
 #else
 #include <x86intrin.h>
 #endif
+#endif
+
+#if ARM_NEON
+#include <arm_neon.h>
 #endif
 
 /* Buffer Alignement */
