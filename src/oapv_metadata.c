@@ -40,6 +40,22 @@ static oapvm_ctx_t *meta_id_to_ctx(oapvm_t id)
     oapv_assert_rv(ctx->magic == OAPVM_MAGIC_CODE, NULL);
     return ctx;
 }
+#define div_255_fast(x)  (((x) + (((x) + 257) >> 8)) >> 8)
+
+static inline u32 meta_get_byte_pld_type(oapv_mdp_t *mdp)
+{
+    return (mdp->pld_type < 65536 ? div_255_fast(mdp->pld_type) : mdp->pld_type / 255) + 1;
+}
+
+static inline u32 meta_get_byte_pld_size(oapv_mdp_t *mdp)
+{
+    return (mdp->pld_size < 65536 ? div_255_fast(mdp->pld_size) : mdp->pld_size / 255) + 1;
+}
+
+static inline u32 meta_get_byte_pld_all(oapv_mdp_t *mdp)
+{
+    return meta_get_byte_pld_type(mdp) + meta_get_byte_pld_size(mdp) + mdp->pld_size;
+}
 
 static oapv_mdp_t **meta_mdp_find_last_with_check(oapv_md_t *md, int type, unsigned char *uuid)
 {
@@ -101,6 +117,7 @@ static int meta_md_rm_mdp(oapv_md_t *md, int mdt)
             mdp_prev->next = mdp->next;
         }
         meta_md_free_mdp(mdp);
+        md->md_size -= meta_get_byte_pld_all(mdp);
         md->md_num--;
         return OAPV_OK;
     }
@@ -121,9 +138,9 @@ static int meta_md_rm_usd(oapv_md_t *md, unsigned char *uuid)
                 else {
                     mdp_prev->next = mdp->next;
                 }
-                md->md_size -= mdp->pld_size;
-                oapv_assert_rv(md->md_size >= 0, OAPV_ERR_UNEXPECTED);
+                oapv_assert_rv(md->md_size >= mdp->pld_size, OAPV_ERR_UNEXPECTED);
                 meta_md_free_mdp(mdp);
+                md->md_size -= meta_get_byte_pld_all(mdp);
                 md->md_num--;
                 return OAPV_OK;
             }
@@ -200,7 +217,7 @@ static void meta_free_md(oapv_md_t *md)
 int oapvm_set(oapvm_t mid, int group_id, int type, void *data, int size, unsigned char *uuid)
 {
     oapvm_ctx_t *md_list = meta_id_to_ctx(mid);
-
+    oapv_assert_rv(md_list, OAPV_ERR_INVALID_ARGUMENT);
     int          ret = meta_verify_mdp_data(type, size, (u8 *)data);
     oapv_assert_rv(OAPV_SUCCEEDED(ret), ret);
 
@@ -230,24 +247,7 @@ int oapvm_set(oapvm_t mid, int group_id, int type, void *data, int size, unsigne
     tmp_mdp->pld_type = type;
     tmp_mdp->pld_data = data;
     *last_ptr = tmp_mdp;
-
-    /* calculate length of payload type */
-    int tmp_mpt = type;
-    while(tmp_mpt >= 255) {
-        tmp_mpt -= 255;
-        md_list->md_arr[md_list_idx].md_size += 8;
-    }
-    md_list->md_arr[md_list_idx].md_size += 8;
-
-    /*  calculate length of payload data size */
-    int tmp_mps = size;
-    while(tmp_mps >= 255) {
-        tmp_mps -= 255;
-        md_list->md_arr[md_list_idx].md_size += 8;
-    }
-    md_list->md_arr[md_list_idx].md_size += 8;
-
-    md_list->md_arr[md_list_idx].md_size += tmp_mdp->pld_size;
+    md_list->md_arr[md_list_idx].md_size += meta_get_byte_pld_all(tmp_mdp);
     md_list->md_arr[md_list_idx].md_num++;
     return OAPV_OK;
 }
@@ -320,14 +320,13 @@ int oapvm_set_all(oapvm_t mid, oapvm_payload_t *pld, int num_plds)
         tmp_mdp->pld_size = pld[i].data_size;
         tmp_mdp->pld_type = pld[i].type;
         tmp_mdp->pld_data = pld[i].data;
-        md_list->md_arr[md_list_idx].md_size += tmp_mdp->pld_size;
+        md_list->md_arr[md_list_idx].md_size += meta_get_byte_pld_all(tmp_mdp);
 
         *last_ptr = tmp_mdp;
     }
     return OAPV_OK;
 
 ERR:
-    // TO-DO: free allocated memory
     return ret;
 }
 
@@ -337,7 +336,7 @@ int oapvm_get_all(oapvm_t mid, oapvm_payload_t *pld, int *num_plds)
     if(pld == NULL) {
         int num_payload = 0;
         for(int i = 0; i < md_list->num; i++) {
-            num_payload += md_list[i].md_arr->md_num;
+            num_payload += md_list->md_arr[i].md_num;
         }
         *num_plds = num_payload;
         return OAPV_OK;

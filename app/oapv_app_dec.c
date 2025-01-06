@@ -195,12 +195,12 @@ static int read_bitstream(FILE *fp, unsigned char *bs_buf, int *bs_buf_size)
             if(feof(fp)) {
                 logv2_line("");
                 logv2("End of file\n");
+                return 0;
             }
             else {
                 logerr("Cannot read bitstream size!\n")
+                return -1;
             };
-
-            return -1;
         }
     }
     else {
@@ -419,34 +419,22 @@ int main(int argc, const char **argv)
     if(fp_bs == NULL) {
         logerr("ERROR: cannot open bitstream file = %s\n", args_var->fname_inp);
         print_usage(argv);
-        return -1;
+        ret = -1; goto ERR;
     }
     /* open output file */
     if(strlen(args_var->fname_out) > 0) {
-        char  fext[16];
-        char *fname = (char *)args_var->fname_out;
-
-        if(strlen(fname) < 5) { /* at least x.yuv or x.y4m */
-            logerr("ERROR: invalide output file name\n");
-            return -1;
-        }
-        strncpy(fext, fname + strlen(fname) - 3, sizeof(fext) - 1);
-        fext[0] = toupper(fext[0]);
-        fext[1] = toupper(fext[1]);
-        fext[2] = toupper(fext[2]);
-
-        if(strcmp(fext, "YUV") == 0) {
-            is_y4m = 0;
-        }
-        else if(strcmp(fext, "Y4M") == 0) {
+        ret = check_file_name_type(args_var->fname_out);
+        if(ret > 0) {
             is_y4m = 1;
         }
-        else {
-            logerr("ERROR: unknown output format\n");
-            ret = -1;
-            goto ERR;
+        else if(ret == 0) {
+            is_y4m = 0;
         }
-        clear_data(fname); /* remove decoded file contents if exists */
+        else { // invalid or unknown file name type
+            logerr("unknown file type name for decoded video\n");
+            ret = -1; goto ERR;
+        }
+        clear_data(args_var->fname_out); /* remove decoded file contents if exists */
     }
 
     // create bitstream buffer
@@ -484,9 +472,14 @@ int main(int argc, const char **argv)
     /* decoding loop */
     while(args_var->max_au == 0 || (au_cnt < args_var->max_au)) {
         read_size = read_bitstream(fp_bs, bs_buf, &bs_buf_size);
-        if(read_size <= 0) {
-            logv3("--> end of bitstream or reading error\n");
+        if (read_size == 0) {
+            logv3("--> end of bitstream\n")
             break;
+        }
+        if (read_size < 0) {
+            logv3("--> bitstream reading error\n")
+            ret = -1;
+            goto ERR;
         }
 
         if(OAPV_FAILED(oapvd_info(bs_buf, bs_buf_size, &aui))) {
@@ -546,6 +539,7 @@ int main(int argc, const char **argv)
         if(stat.read != bs_buf_size) {
             logerr("\t=> different reading of bitstream (in:%d, read:%d)\n",
                    bs_buf_size, stat.read);
+            continue;
         }
 
         /* testing of metadata reading */
@@ -603,10 +597,14 @@ int main(int argc, const char **argv)
                         if(write_y4m_header(args_var->fname_out, imgb_o)) {
                             logerr("cannot write Y4M header\n");
                             ret = -1;
-                            goto END;
+                            goto ERR;
                         }
                     }
-                    write_dec_img(args_var->fname_out, imgb_o, is_y4m);
+                    if(write_dec_img(args_var->fname_out, imgb_o, is_y4m)) {
+                        logerr("cannot write decoded video\n");
+                        ret = -1;
+                        goto ERR;
+                    }
                 }
                 frm_cnt[i]++;
             }

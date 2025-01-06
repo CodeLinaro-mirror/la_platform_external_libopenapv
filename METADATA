@@ -8,14 +8,14 @@ third_party {
   license_type: NOTICE
   last_upgrade_date {
     year: 2024
-    month: 11
-    day: 4
+    month: 12
+    day: 10
   }
   homepage: "https://github.com/openapv/openapv"
   identifier {
     type: "Git"
     value: "https://github.com/openapv/openapv.git"
-    version: "v0.1.8"
+    version: "v0.1.10"
     primary_source: true
   }
 }

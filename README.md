@@ -15,7 +15,7 @@ The OpenAPV supports the following features:
 
 
 ## APV codec
-The APV codec is a professional video codec, which was developed in response to the need for professional level high quality video recording and post production. The primary purpose of the APV codec is for use in professional video recording and editing workflows for various types of content. 
+The APV codec is a professional video codec, which was developed in response to the need for professional level high quality video recording and post production. The primary purpose of the APV codec is for use in professional video recording and editing workflows for various types of content.
 
 APV codec utilizes technologies known to be over 20 years to achieve a royalty free codec. APV builds a video codec using only conventional coding technologies, which consist of traditional methods published between the early 1980s and the end of the 1990s.
 
@@ -40,7 +40,7 @@ The APV codec standard has the following features:
 - Build Requirements
   - CMake (download from [https://cmake.org/](https://cmake.org/))
   - GCC
- 
+
   For ARM
   - gcc-aarch64-linux-gnu
   - binutils-aarch64-linux-gnu
@@ -64,16 +64,16 @@ The APV codec standard has the following features:
 ## How to use
 ### Encoder
 
-Encoder as input require raw YUV file (422, 444), 10-bit or more.
+Encoder as input require raw YCbCr file (422, 444), 10-bit or more.
 
 Displaying help:
 
-    $> oapv_app_enc --help
+    oapv_app_enc --help
 
 Encoding:
 
-    $> oapv_app_enc -i input_1920x1080_yuv422_10bit.yuv -w 1920 -h 1080 -d 10 -z 30 --input-csp 2 -o encoded.apv
-    $> oapv_app_enc -i input.y4m -o encoded.apv    
+    oapv_app_enc -i input_1920x1080_yuv422_10bit.yuv -w 1920 -h 1080 -d 10 -z 30 --input-csp 2 -o encoded.apv
+    oapv_app_enc -i input.y4m -o encoded.apv
 
 ### Decoder
 
@@ -81,29 +81,19 @@ Decoder output can be in yuv or y4m formats.
 
 Displaying help:
 
-    $> oapv_app_dec --help
+    oapv_app_dec --help
 
 Decoding:
 
-    $> oapv_app_dec -i encoded.apv -o output.y4m
+    oapv_app_dec -i encoded.apv -o output.y4m
 
 ## Testing
 
-In build directory run:
-```
-ctest
-```
+In build directory run ``ctest``
 
 ## Packaging
 
-For generating package ready for distribution (default deb) execute in build directory:
-```
-cpack
-```
-or other formats (tgz, zip etc.):
-```
-cpack -G TGZ
-```
+For generating package ready for distribution (default deb) execute in build directory ``cpack``,  or other formats (tgz, zip etc.) ``cpack -G TGZ``.
 
 ## License
 
