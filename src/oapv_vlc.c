@@ -407,14 +407,9 @@ int oapve_vlc_tile_size(oapv_bs_t *bs, int tile_size)
 void oapve_set_tile_header(oapve_ctx_t *ctx, oapv_th_t *th, int tile_idx, int qp)
 {
     oapv_mset(th, 0, sizeof(oapv_th_t));
+
     for(int c = 0; c < ctx->num_comp; c++) {
-        th->tile_qp[c] = qp;
-        if(c == 1) {
-            th->tile_qp[c] = oapv_clip3(MIN_QUANT, MAX_QUANT, th->tile_qp[c] + ctx->param->qp_cb_offset);
-        }
-        else if(c == 2) {
-            th->tile_qp[c] = oapv_clip3(MIN_QUANT, MAX_QUANT, th->tile_qp[c] + ctx->param->qp_cr_offset);
-        }
+        th->tile_qp[c] = oapv_clip3(MIN_QUANT, MAX_QUANT(10), qp + ctx->qp_offset[c]);
     }
     th->tile_index = tile_idx;
 
@@ -1210,7 +1205,7 @@ int oapvd_vlc_dc_coeff(oapvd_ctx_t *ctx, oapvd_core_t *core, oapv_bs_t *bs, int 
 int oapvd_vlc_ac_coeff(oapvd_ctx_t *ctx, oapvd_core_t *core, oapv_bs_t *bs, s16 *coef, int c)
 {
     int        sign, level, prev_level, run;
-    int        scan_pos_offset, num_coeff, i, coef_cnt = 0;
+    int        scan_pos_offset, num_coeff, i;
     const u16 *scanp;
 
     scanp = oapv_tbl_scan;
@@ -1301,8 +1296,6 @@ int oapvd_vlc_ac_coeff(oapvd_ctx_t *ctx, oapvd_core_t *core, oapv_bs_t *bs, s16 
         bs->code <<= 1;
         bs->leftbits -= 1;
         coef[scanp[scan_pos_offset]] = sign ? -(s16)level : (s16)level;
-
-        coef_cnt++;
 
         if(scan_pos_offset >= num_coeff - 1) {
             break;
