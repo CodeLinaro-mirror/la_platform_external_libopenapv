@@ -21,22 +21,23 @@ This document specifies methods to store data encoded with Advanced Professional
 
 ### Description
 
-The sample entry with APV1SampleEntry type specifies that the track contains APV coded video data samples. This type of sample entry shall use APVCodecConfiguraionBox.
+The sample entry with APV1SampleEntry type specifies that the track contains APV coded video data samples. This type of sample entry shall use APVCodecConfigurationBox.
 
 
 ### Syntax
-
-class APV1SmapleEntry extends VisualSampleEntry('apv1'){
+~~~~
+class APV1SampleEntry extends VisualSampleEntry('apv1'){
 	APVCodecConfigurationBox	config;
 }
+~~~~
 
 ### Semantics
 
-The value of largest_frame_width and largest_frame_height of the APVCodecConfigurationBox shall be used for the value of width and height fields of the VisualSampleEntry, respectively.
+The largest one among the values of the frame_width field and frame_height field of the APVCodecConfigurationBox shall be used for the value of width and height fields of the VisualSampleEntry, respectively.
 
 When the sample entry name is 'apv1', the stream to which this sample entry applies shall be a compliant APV stream as viewed by an APV decoder operating under the configuration (including profile, level, and so on) given in the APVCodecConfigurationBox.
 
-The compressorname field of the VisualSampleEntry shall have '\012APV Coding'. The sample entry with APV1SampleEntry type specifies that the track contains APV coded video data samples. This type of sample entry shall use APVCodecConfiguraionBox.
+The compressorname field of the VisualSampleEntry shall have '\012APV Coding'. The sample entry with APV1SampleEntry type specifies that the track contains APV coded video data samples. This type of sample entry shall use APVCodecConfigurationBox.
 
 ## APV Codec Configuration Box
 
@@ -52,40 +53,52 @@ The compressorname field of the VisualSampleEntry shall have '\012APV Coding'. T
 
 ### Description
 
-The box with APVCodecConfigurationBox shall contains information for initial configuration of a decoder which consumes the samples references the sample entry type of apv1.
-
-All variation of information required to decide appropriate resource for decoding, e.g. the profiles a decoder compliant to, are carried so that the client can decide whether it has appropriate resources to completely decode the AUs in that track.
-
+The box with APVCodecConfigurationBox shall contains APVDecoderConfigurationRecord as defined in {{APVDecoderConfigurationRecord}}
 
 ### Syntax
 
 ~~~~
 aligned(8) class APVDecoderConfigurationBox extends FullBox('apvC',version=0, flags) {
-   unsigned int(8) configurationVersion = 1;
-   unsigned int(8) number_of_configuration_entry;
-   for (i=0; i<number_of_configuration_entry; i++) {
-      unsigned int(8) pbu_type[i];
-      unsigned int(8) number_of_frame_info[i];
-      for (j=0; j<number_of_frame_info[i]; j++) {
-         reserved_zero_6bits;
-         unsigned int(1) color_description_present_flag[i][j];
-         unsigned int(1) capture_time_distance_ignored[i][j];
-         unsigned int(8) profile_idc[i][j];
-         unsigned int(8) level_idc[i][j];
-         unsigned int(8) band_idc[i][j];
-         unsigned int(32) frame_width[i][j];
-         unsigned int(32) frame_height[i][j];
-         unsigned int(4) chroma_format_idc[i][j];
-         unsigned int(4) bit_depth_minus8[i][j];
-         unsigned int(8) capture_time_distance[i][j];
-         if (color_description_present_flag[i][j]) {
-            unsigned int(8) color_primaries[i][j];
-            unsigned int(8) transfer_characteristics[i][j];
-            unsigned int(8) matrix_coefficients[i][j];
-            unsigned int(1) full_range_flag[i][j];
-         }
-      }
-   }
+    APVDecoderConfigurationRecord apvConfig;
+}
+~~~~
+
+## APV Decoder Configuration Record {#APVDecoderConfigurationRecord}		
+
+The APVDecoderConfigurationRecord contains the information for initial configuration of a decoder which consumes the samples references the sample entry type of apv1. The information in this record is extracted from frame_header() of the bitstream stored in the track containing this record.
+
+All variation of information required to decide appropriate resource for decoding, e.g. the profiles a decoder compliant to, are carried so that the client can decide whether it has appropriate resources to completely decode the AUs in that track.
+
+### Syntax
+
+~~~~
+aligned(8) class APVDecoderConfigurationRecord {
+    unsigned int(8) configurationVersion = 1;
+    unsigned int(8) number_of_configuration_entry;
+    for (i=0; i<number_of_configuration_entry; i++) {
+        unsigned int(8) pbu_type[i];
+        unsigned int(8) number_of_frame_info[i];
+        for (j=0; j<number_of_frame_info[i]; j++) {
+            reserved_zero_6bits;
+            unsigned int(1) color_description_present_flag[i][j];
+            unsigned int(1) capture_time_distance_ignored[i][j];
+            unsigned int(8) profile_idc[i][j];
+            unsigned int(8) level_idc[i][j];
+            unsigned int(8) band_idc[i][j];
+            unsigned int(32) frame_width[i][j];
+            unsigned int(32) frame_height[i][j];
+            unsigned int(4) chroma_format_idc[i][j];
+            unsigned int(4) bit_depth_minus8[i][j];
+            unsigned int(8) capture_time_distance[i][j];
+            if (color_description_present_flag[i][j]) {
+                unsigned int(8) color_primaries[i][j];
+                unsigned int(8) transfer_characteristics[i][j];
+                unsigned int(8) matrix_coefficients[i][j];
+                unsigned int(1) full_range_flag[i][j];
+                reserved_zero_7bits;
+            }
+        }
+    }
 }
 ~~~~
 
@@ -163,14 +176,14 @@ The subsample_priority field shall be set to a value in accordance with the spec
 The discardable field shall be set to 1 only if this sample would still be decodable if this sub-sample is discarded.
 
 The codec_specific_parameters field of the SubSampleInformationBox is defined for APV as follows:
-~~~~
 
-		if (flags == 0) {
-			unsigned int(32) tile_index;
-                             }
-		else {
-			bit(32) reserved = 0;
-		}
+~~~~
+if (flags == 0) {
+    unsigned int(32) tile_index;
+}
+else {
+    bit(32) reserved = 0;
+}
 ~~~~
 
 tile_index for sub-samples based on tiles, this parameter indicates the tile index in raster order in a frame.
