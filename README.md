@@ -49,21 +49,21 @@ The APV codec standard has the following features:
   - mingw-w64
   - mingw-w64-tools
 
-- Build Instructions PC
+- Build Instructions PC (Linux)
   ```
   cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
   cmake --build build
   ```
 
-- Build Instructions ARM
+- Build Instructions ARM (Crosscompile)
   ```
-  cmake -DCMAKE_BUILD_TYPE=Release -S . -B build-arm -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DARM=TRUE -DCMAKE_SYSTEM_PROCESSOR=aarch64
+  cmake -S . -B build-arm -DCMAKE_TOOLCHAIN_FILE=aarch64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release 
   cmake --build build-arm
   ```
 
 - Build Instructions Windows (Crosscompile)
   ```
-  cmake -S . -B build-windows -DCMAKE_TOOLCHAIN_FILE=windows_x86_64_toolchain.cmake
+  cmake -S . -B build-windows -DCMAKE_TOOLCHAIN_FILE=windows_x86_64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release 
   cmake --build build-windows
   ```
 
@@ -96,6 +96,18 @@ Displaying help:
 Decoding:
 
     oapv_app_dec -i encoded.apv -o output.y4m
+
+## Utility
+
+### Graphical APV bitstream parser
+
+Pattern file of APV bitstream for [ImHex](https://github.com/WerWolv/ImHex) is provided [here](/util/apv.hexpat).
+1. Install [ImHex](https://github.com/WerWolv/ImHex) application
+2. Download [APV pattern file](/util/apv.hexpat)
+2. Open APV bitstream (\*.apv file) with ImHex
+3. Import the APV pattern file on Pattern editor view of ImHex and apply
+
+![APV_on_ImHex](/readme/img/apv_parser_on_imhex.png)
 
 ## Testing
 
