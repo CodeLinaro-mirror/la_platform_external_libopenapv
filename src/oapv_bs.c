@@ -370,6 +370,26 @@ int oapv_bsr_read1(oapv_bs_t *bs)
     return code;
 }
 
+u32 oapv_bsr_read_direct(void *addr, int len)
+{
+    u32 code = 0;
+    int shift = 24;
+    u8 *p = (u8 *)addr;
+    int byte = (len + 7) >> 3;
+
+    oapv_assert(len <= 32);
+
+    while(byte) {
+        code |= *(p) << shift;
+        shift -= 8;
+        byte--;
+        p++;
+    }
+    code = code >> (32 - len);
+    return code;
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // end of decoder code
 #endif // ENABLE_DECODER
