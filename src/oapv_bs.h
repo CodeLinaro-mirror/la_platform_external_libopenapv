@@ -139,6 +139,7 @@ void *oapv_bsr_sink(oapv_bs_t *bs);
 void oapv_bsr_move(oapv_bs_t *bs, u8 *pos);
 u32 oapv_bsr_read(oapv_bs_t *bs, int size);
 int oapv_bsr_read1(oapv_bs_t *bs);
+u32 oapv_bsr_read_direct(void *addr, int len);
 
 ///////////////////////////////////////////////////////////////////////////////
 // end of decoder code
