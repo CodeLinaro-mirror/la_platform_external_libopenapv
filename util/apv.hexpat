@@ -207,8 +207,6 @@ struct AccessUnit {
     au_end = $ + au_size;
     
     pbu_count = 0; // reset number of PBU
-
-    char signature[4]; // 'aPv1'
     PBU pbu[while($ < au_end)] [[inline]];
 };
 
