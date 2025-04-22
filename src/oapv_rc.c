@@ -101,7 +101,7 @@ int oapve_rc_get_tile_cost_thread(oapve_ctx_t* ctx, u64* sum)
     }
 
     oapv_tpool_t* tpool = ctx->tpool;
-    int parallel_task = (ctx->cdesc.threads > ctx->num_tiles) ? ctx->num_tiles : ctx->cdesc.threads;
+    int parallel_task = (ctx->threads > ctx->num_tiles) ? ctx->num_tiles : ctx->threads;
 
     // run new threads
     int tidx = 0;
@@ -207,4 +207,5 @@ void oapve_rc_update_after_pic(oapve_ctx_t* ctx, double cost)
     diff_lambda = oapv_clip3(-0.125, 0.125, 0.25 * diff_lambda);
     ctx->rc_param.alpha = (ctx->rc_param.alpha) * exp(diff_lambda);
     ctx->rc_param.beta = (ctx->rc_param.beta) + diff_lambda / ln_bpp;
+    ctx->rc_param.is_updated = 1;
 }
