@@ -296,8 +296,8 @@ static void enc_minus_mid_val(s16 *coef, int w_blk, int h_blk, int bit_depth)
 static int enc_set_tile_info(oapve_tile_t *ti, int w_pel, int h_pel, int tile_w,
                              int tile_h, int *num_tile_cols, int *num_tile_rows, int *num_tiles)
 {
-    (*num_tile_cols) = (w_pel + (tile_w - 1)) / tile_w;
-    (*num_tile_rows) = (h_pel + (tile_h - 1)) / tile_h;
+    (*num_tile_cols) = oapv_div_round_up(w_pel, tile_w);
+    (*num_tile_rows) = oapv_div_round_up(h_pel, tile_h);
     (*num_tiles) = (*num_tile_cols) * (*num_tile_rows);
 
     for(int i = 0; i < (*num_tiles); i++) {
@@ -642,7 +642,7 @@ static int enc_read_param(oapve_ctx_t *ctx, oapve_param_t *param)
 {
     /* check input parameters */
     oapv_assert_rv(param->w > 0 && param->h > 0, OAPV_ERR_INVALID_ARGUMENT);
-    oapv_assert_rv(param->qp >= MIN_QUANT && param->qp <= MAX_QUANT(10), OAPV_ERR_INVALID_ARGUMENT);
+    oapv_assert_rv((param->qp >= MIN_QUANT && param->qp <= MAX_QUANT(10)) || param->qp == OAPVE_PARAM_QP_AUTO, OAPV_ERR_INVALID_ARGUMENT);
 
     ctx->qp_offset[Y_C] = 0;
     ctx->qp_offset[U_C] = param->qp_offset_c1;
@@ -671,12 +671,10 @@ static int enc_read_param(oapve_ctx_t *ctx, oapve_param_t *param)
     ctx->log2_block = OAPV_LOG2_BLK;
 
     /* set various value */
-    ctx->w = ((param->w + (OAPV_MB_W - 1)) >> OAPV_LOG2_MB_W) << OAPV_LOG2_MB_W;
-    ctx->h = ((param->h + (OAPV_MB_H - 1)) >> OAPV_LOG2_MB_H) << OAPV_LOG2_MB_H;
+    ctx->w = oapv_div_round_up(param->w, OAPV_MB_W) * OAPV_MB_W;
+    ctx->h = oapv_div_round_up(param->h, OAPV_MB_H) * OAPV_MB_H;
 
-    int tile_w = param->tile_w_mb * OAPV_MB_W;
-    int tile_h = param->tile_h_mb * OAPV_MB_H;
-    enc_set_tile_info(ctx->tile, ctx->w, ctx->h, tile_w, tile_h, &ctx->num_tile_cols, &ctx->num_tile_rows, &ctx->num_tiles);
+    enc_set_tile_info(ctx->tile, ctx->w, ctx->h, ctx->param->tile_w, ctx->param->tile_h, &ctx->num_tile_cols, &ctx->num_tile_rows, &ctx->num_tiles);
 
     return OAPV_OK;
 }
@@ -684,11 +682,11 @@ static int enc_read_param(oapve_ctx_t *ctx, oapve_param_t *param)
 static void enc_flush(oapve_ctx_t *ctx)
 {
     // Release thread pool controller and created threads
-    if(ctx->cdesc.threads >= 1) {
+    if(ctx->threads >= 1) {
         if(ctx->tpool) {
             // thread controller instance is present
             // terminate the created thread
-            for(int i = 0; i < ctx->cdesc.threads; i++) {
+            for(int i = 0; i < ctx->threads; i++) {
                 if(ctx->thread_id[i]) {
                     // valid thread instance
                     ctx->tpool->release(&ctx->thread_id[i]);
@@ -701,8 +699,10 @@ static void enc_flush(oapve_ctx_t *ctx)
         }
     }
 
-    oapv_tpool_sync_obj_delete(&ctx->sync_obj);
-    for(int i = 0; i < ctx->cdesc.threads; i++) {
+    if (ctx->sync_obj != NULL) {
+        oapv_tpool_sync_obj_delete(&ctx->sync_obj);
+    }
+    for(int i = 0; i < ctx->threads; i++) {
         enc_core_free(ctx->core[i]);
         ctx->core[i] = NULL;
     }
@@ -716,7 +716,10 @@ static int enc_ready(oapve_ctx_t *ctx)
     int           ret = OAPV_OK;
     oapv_assert(ctx->core[0] == NULL);
 
-    for(int i = 0; i < ctx->cdesc.threads; i++) {
+    ret = oapve_param_update(ctx);
+    oapv_assert_g(ret == OAPV_OK, ERR);
+
+    for(int i = 0; i < ctx->threads; i++) {
         core = enc_core_alloc();
         oapv_assert_gv(core != NULL, ret, OAPV_ERR_OUT_OF_MEMORY, ERR);
         ctx->core[i] = core;
@@ -731,10 +734,10 @@ static int enc_ready(oapve_ctx_t *ctx)
     ctx->sync_obj = oapv_tpool_sync_obj_create();
     oapv_assert_gv(ctx->sync_obj != NULL, ret, OAPV_ERR_UNKNOWN, ERR);
 
-    if(ctx->cdesc.threads >= 1) {
+    if(ctx->threads >= 1) {
         ctx->tpool = oapv_malloc(sizeof(oapv_tpool_t));
-        oapv_tpool_init(ctx->tpool, ctx->cdesc.threads);
-        for(int i = 0; i < ctx->cdesc.threads; i++) {
+        oapv_tpool_init(ctx->tpool, ctx->threads);
+        for(int i = 0; i < ctx->threads; i++) {
             ctx->thread_id[i] = ctx->tpool->create(ctx->tpool, i);
             oapv_assert_gv(ctx->thread_id[i] != NULL, ret, OAPV_ERR_UNKNOWN, ERR);
         }
@@ -751,7 +754,6 @@ static int enc_ready(oapve_ctx_t *ctx)
 
     return OAPV_OK;
 ERR:
-
     enc_flush(ctx);
 
     return ret;
@@ -1092,7 +1094,7 @@ static int enc_frm_prepare(oapve_ctx_t *ctx, oapv_imgb_t *imgb_i, oapv_imgb_t *i
         ctx->tile[i].bs_buf_max = buf_size;
     }
 
-    for(int i = 0; i < ctx->cdesc.threads; i++) {
+    for(int i = 0; i < ctx->threads; i++) {
         ctx->core[i]->ctx = ctx;
         ctx->core[i]->thread_idx = i;
     }
@@ -1137,7 +1139,12 @@ static int enc_frame(oapve_ctx_t *ctx)
         }
 
         ctx->rc_param.lambda = oapve_rc_estimate_pic_lambda(ctx, cost_sum);
-        ctx->rc_param.qp = oapve_rc_estimate_pic_qp(ctx->rc_param.lambda);
+        if (ctx->param->qp == OAPVE_PARAM_QP_AUTO || ctx->rc_param.is_updated != 0) {
+            ctx->rc_param.qp = oapve_rc_estimate_pic_qp(ctx->rc_param.lambda);
+        }
+        else {
+            ctx->rc_param.qp = ctx->param->qp;
+        }
 
         for(int c = 0; c < ctx->num_comp; c++) {
             ctx->qp[c] = oapv_clip3(MIN_QUANT, MAX_QUANT(10), ctx->rc_param.qp + ctx->qp_offset[c]);
@@ -1146,7 +1153,7 @@ static int enc_frame(oapve_ctx_t *ctx)
 
     oapv_tpool_t *tpool = ctx->tpool;
     int           res, tidx = 0, thread_num1 = 0;
-    int           parallel_task = (ctx->cdesc.threads > ctx->num_tiles) ? ctx->num_tiles : ctx->cdesc.threads;
+    int           parallel_task = (ctx->threads > ctx->num_tiles) ? ctx->num_tiles : ctx->threads;
 
     /* encode tiles ************************************/
     for(tidx = 0; tidx < (parallel_task - 1); tidx++) {
@@ -1299,7 +1306,9 @@ int oapve_encode(oapve_t eid, oapv_frms_t *ifrms, oapvm_t mid, oapv_bitb_t *bitb
     u8       *bs_pos_au_beg = oapv_bsw_sink(bs); // address syntax of au size
     u8       *bs_pos_pbu_beg;
     oapv_bs_t bs_pbu_beg;
-    oapv_bsw_write(bs, 0, 32);
+    oapv_bsw_write(bs, 0, 32); // raw bitstream byte size (skip)
+
+    oapv_bsw_write(bs, 0x61507631, 32); // signature ('aPv1')
 
     for(i = 0; i < ifrms->num_frms; i++) {
         frm = &ifrms->frm[i];
@@ -1307,7 +1316,7 @@ int oapve_encode(oapve_t eid, oapv_frms_t *ifrms, oapvm_t mid, oapv_bitb_t *bitb
         /* set default value for encoding parameter */
         ctx->param = &ctx->cdesc.param[i];
         ret = enc_read_param(ctx, ctx->param);
-        oapv_assert_rv(ret == OAPV_OK, OAPV_ERR);
+        oapv_assert_rv(ret == OAPV_OK, ret);
 
         oapv_assert_rv(ctx->param->profile_idc == OAPV_PROFILE_422_10, OAPV_ERR_UNSUPPORTED);
 
@@ -1373,7 +1382,7 @@ int oapve_encode(oapve_t eid, oapv_frms_t *ifrms, oapvm_t mid, oapv_bitb_t *bitb
         }
     }
 
-    u32 au_size = (u32)((u8 *)oapv_bsw_sink(bs) - bs_pos_au_beg) - 4;
+    u32 au_size = (u32)((u8 *)oapv_bsw_sink(bs) - bs_pos_au_beg) - 4 /* au_size */;
     oapv_bsw_write_direct(bs_pos_au_beg, au_size, 32); /* u(32) */
 
     oapv_bsw_deinit(&ctx->bs); /* de-init BSW */
@@ -1449,39 +1458,6 @@ int oapve_config(oapve_t eid, int cfg, void *buf, int *size)
     default:
         oapv_trace("unknown config value (%d)\n", cfg);
         oapv_assert_rv(0, OAPV_ERR_UNSUPPORTED);
-    }
-
-    return OAPV_OK;
-}
-
-int oapve_param_default(oapve_param_t *param)
-{
-    oapv_mset(param, 0, sizeof(oapve_param_t));
-    param->preset = OAPV_PRESET_DEFAULT;
-
-    param->qp_offset_c1 = 0;
-    param->qp_offset_c2 = 0;
-    param->qp_offset_c3 = 0;
-
-    param->tile_w_mb = 16;
-    param->tile_h_mb = 16;
-
-    param->profile_idc = OAPV_PROFILE_422_10;
-    param->level_idc = (int)((4.1 * 30.0) + 0.5);
-    param->band_idc = 2;
-
-    param->use_q_matrix = 0;
-
-    param->color_description_present_flag = 0;
-    param->color_primaries = 2; // unspecified color primaries
-    param->transfer_characteristics = 2; // unspecified transfer characteristics
-    param->matrix_coefficients = 2; // unspecified matrix coefficients
-    param->full_range_flag = 0; // limited range
-
-    for(int c = 0; c < OAPV_MAX_CC; c++) {
-        for(int i = 0; i < OAPV_BLK_D; i++) {
-            param->q_matrix[c][i] = 16;
-        }
     }
 
     return OAPV_OK;
@@ -1670,6 +1646,9 @@ static int dec_tile_comp(oapvd_tile_t *tile, oapvd_ctx_t *ctx, oapvd_core_t *cor
 
     /* byte align */
     oapv_bsr_align8(bs);
+    /* check actual read size of 'tile()' is equal or smaller than 'tile_data_size' in tile header */
+    oapv_assert_rv(BSR_GET_READ_BYTE(bs) <= tile->th.tile_data_size[c], OAPV_ERR_MALFORMED_BITSTREAM);
+
     return OAPV_OK;
 }
 
@@ -1677,11 +1656,12 @@ static int dec_tile(oapvd_core_t *core, oapvd_tile_t *tile)
 {
     int          ret, midx, x, y, c;
     oapvd_ctx_t *ctx = core->ctx;
-    oapv_bs_t    bs;
+    oapv_bs_t    bs; // bs for 'tile()' syntax
 
     oapv_bsr_init(&bs, tile->bs_beg + OAPV_TILE_SIZE_LEN, tile->data_size, NULL);
     ret = oapvd_vlc_tile_header(&bs, ctx, &tile->th);
     oapv_assert_rv(OAPV_SUCCEEDED(ret), ret);
+
     for(c = 0; c < ctx->num_comp; c++) {
         core->qp[c] = tile->th.tile_qp[c];
         int dq_scale = oapv_tbl_dq_scale[core->qp[c] % 6];
@@ -1702,6 +1682,9 @@ static int dec_tile(oapvd_core_t *core, oapvd_tile_t *tile)
     for(c = 0; c < ctx->num_comp; c++) {
         int  tc, s_dst;
         s16 *dst;
+        oapv_bs_t bsc; // bs for 'tile_data()' syntax
+
+        oapv_bsr_init(&bsc, BSR_GET_CUR(&bs), tile->th.tile_data_size[c], NULL);
 
         if(OAPV_CS_GET_FORMAT(ctx->imgb->cs) == OAPV_CF_PLANAR2) {
             tc = c > 0 ? 1 : 0;
@@ -1714,8 +1697,11 @@ static int dec_tile(oapvd_core_t *core, oapvd_tile_t *tile)
             s_dst = ctx->imgb->s[c];
         }
 
-        ret = dec_tile_comp(tile, ctx, core, &bs, c, s_dst, dst);
+        ret = dec_tile_comp(tile, ctx, core, &bsc, c, s_dst, dst);
         oapv_assert_rv(OAPV_SUCCEEDED(ret), ret);
+
+        // move bs buffer to next 'tile_data()' component
+        BSR_MOVE_BYTE_ALIGN(&bs, tile->th.tile_data_size[c]);
     }
 
     oapvd_vlc_tile_dummy_data(&bs);
@@ -1798,11 +1784,11 @@ ERR:
 
 static void dec_flush(oapvd_ctx_t *ctx)
 {
-    if(ctx->cdesc.threads >= 2) {
+    if(ctx->threads >= 2) {
         if(ctx->tpool) {
             // thread controller instance is present
             // terminate the created thread
-            for(int i = 0; i < ctx->cdesc.threads - 1; i++) {
+            for(int i = 0; i < ctx->threads - 1; i++) {
                 if(ctx->thread_id[i]) {
                     // valid thread instance
                     ctx->tpool->release(&ctx->thread_id[i]);
@@ -1817,7 +1803,7 @@ static void dec_flush(oapvd_ctx_t *ctx)
 
     oapv_tpool_sync_obj_delete(&(ctx->sync_obj));
 
-    for(int i = 0; i < ctx->cdesc.threads; i++) {
+    for(int i = 0; i < ctx->threads; i++) {
         dec_core_free(ctx->core[i]);
     }
 }
@@ -1826,9 +1812,18 @@ static int dec_ready(oapvd_ctx_t *ctx)
 {
     int i, ret = OAPV_OK;
 
+    if (ctx->cdesc.threads == OAPV_CDESC_THREADS_AUTO) {
+        int num_cores = oapv_get_num_cpu_cores();
+        ctx->threads = oapv_min(OAPV_MAX_THREADS, num_cores);
+    }
+    else {
+        ctx->threads = ctx->cdesc.threads;
+    }
+    oapv_assert_gv(ctx->threads > 0 && ctx->threads <= OAPV_MAX_THREADS, ret, OAPV_ERR_INVALID_ARGUMENT, ERR);
+
     if(ctx->core[0] == NULL) {
         // create cores
-        for(i = 0; i < ctx->cdesc.threads; i++) {
+        for(i = 0; i < ctx->threads; i++) {
             ctx->core[i] = dec_core_alloc();
             oapv_assert_gv(ctx->core[i], ret, OAPV_ERR_OUT_OF_MEMORY, ERR);
             ctx->core[i]->ctx = ctx;
@@ -1836,7 +1831,7 @@ static int dec_ready(oapvd_ctx_t *ctx)
     }
 
     // initialize the threads to NULL
-    for(i = 0; i < OAPV_MAX_THREADS; i++) {
+    for(i = 0; i < ctx->threads; i++) {
         ctx->thread_id[i] = 0;
     }
 
@@ -1844,10 +1839,10 @@ static int dec_ready(oapvd_ctx_t *ctx)
     ctx->sync_obj = oapv_tpool_sync_obj_create();
     oapv_assert_gv(ctx->sync_obj != NULL, ret, OAPV_ERR_UNKNOWN, ERR);
 
-    if(ctx->cdesc.threads >= 2) {
+    if(ctx->threads >= 2) {
         ctx->tpool = oapv_malloc(sizeof(oapv_tpool_t));
-        oapv_tpool_init(ctx->tpool, ctx->cdesc.threads - 1);
-        for(i = 0; i < ctx->cdesc.threads - 1; i++) {
+        oapv_tpool_init(ctx->tpool, ctx->threads - 1);
+        for(i = 0; i < ctx->threads - 1; i++) {
             ctx->thread_id[i] = ctx->tpool->create(ctx->tpool, i);
             oapv_assert_gv(ctx->thread_id[i] != NULL, ret, OAPV_ERR_UNKNOWN, ERR);
         }
@@ -1897,7 +1892,7 @@ oapvd_t oapvd_create(oapvd_cdesc_t *cdesc, int *err)
     ctx = NULL;
 
     /* check if any decoder argument is correctly set */
-    oapv_assert_gv(cdesc->threads > 0 && cdesc->threads <= OAPV_MAX_THREADS, ret, OAPV_ERR_INVALID_ARGUMENT, ERR);
+    oapv_assert_gv((cdesc->threads > 0 && cdesc->threads <= OAPV_MAX_THREADS) || cdesc->threads == OAPV_CDESC_THREADS_AUTO , ret, OAPV_ERR_INVALID_ARGUMENT, ERR);
 
     /* memory allocation for ctx and core structure */
     ctx = (oapvd_ctx_t *)dec_ctx_alloc();
@@ -1943,7 +1938,6 @@ void oapvd_delete(oapvd_t did)
 int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid, oapvd_stat_t *stat)
 {
     oapvd_ctx_t *ctx;
-    oapv_bs_t   *bs;
     oapv_pbuh_t  pbuh;
     int          ret = OAPV_OK;
     u32          pbu_size;
@@ -1953,7 +1947,16 @@ int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid
     ctx = dec_id_to_ctx(did);
     oapv_assert_rv(ctx, OAPV_ERR_INVALID_ARGUMENT);
 
+    // read signature ('aPv1')
+    oapv_assert_rv(bitb->ssize > 4, OAPV_ERR_MALFORMED_BITSTREAM);
+    u32 signature = oapv_bsr_read_direct(bitb->addr, 32);
+    oapv_assert_rv(signature == 0x61507631, OAPV_ERR_MALFORMED_BITSTREAM);
+    cur_read_size += 4;
+    stat->read += 4;
+
+    // decode PBUs
     do {
+        oapv_bs_t   *bs;
         u32 remain = bitb->ssize - cur_read_size;
         oapv_assert_gv((remain >= 8), ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
         oapv_bsr_init(&ctx->bs, (u8 *)bitb->addr + cur_read_size, remain, NULL);
@@ -1986,7 +1989,7 @@ int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid
             int           parallel_task = 1;
             int           tidx = 0;
 
-            parallel_task = (ctx->cdesc.threads > ctx->num_tiles) ? ctx->num_tiles : ctx->cdesc.threads;
+            parallel_task = (ctx->threads > ctx->num_tiles) ? ctx->num_tiles : ctx->threads;
 
             /* decode tiles ************************************/
             for(tidx = 0; tidx < (parallel_task - 1); tidx++) {
@@ -2016,7 +2019,7 @@ int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid
 
             ofrms->frm[frame_cnt].pbu_type = pbuh.pbu_type;
             ofrms->frm[frame_cnt].group_id = pbuh.group_id;
-            stat->frm_size[frame_cnt] = pbu_size + 4 /* PUB size length*/;
+            stat->frm_size[frame_cnt] = pbu_size + 4 /* byte size of 'pbu_size' syntax */;
             frame_cnt++;
         }
         else if(pbuh.pbu_type == OAPV_PBU_TYPE_METADATA) {
@@ -2029,7 +2032,7 @@ int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid
             ret = oapvd_vlc_filler(bs, (pbu_size - 4));
             oapv_assert_g(OAPV_SUCCEEDED(ret), ERR);
         }
-        cur_read_size += pbu_size + 4;
+        cur_read_size += pbu_size + 4 /* byte size of 'pbu_size' syntax */;
     } while(cur_read_size < bitb->ssize);
     stat->aui.num_frms = frame_cnt;
     oapv_assert_gv(ofrms->num_frms == frame_cnt, ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
@@ -2062,15 +2065,22 @@ int oapvd_info(void *au, int au_size, oapv_au_info_t *aui)
 {
     int ret, frm_count = 0;
     u32 cur_read_size = 0;
+    int pbu_count = 0;
+    oapv_bs_t bs;
 
     DUMP_SET(0);
 
-    /* 'au' address contains series of PBU */
+    // read signature ('aPv1')
+    oapv_assert_rv(au_size > 4, OAPV_ERR_MALFORMED_BITSTREAM);
+    u32 signature = oapv_bsr_read_direct(au, 32);
+    oapv_assert_rv(signature == 0x61507631, OAPV_ERR_MALFORMED_BITSTREAM);
+    cur_read_size += 4;
+
+    // parse PBUs
     do {
-        oapv_bs_t bs;
         u32 pbu_size = 0;
         u32 remain = au_size - cur_read_size;
-        oapv_assert_rv((remain >= 8), OAPV_ERR_MALFORMED_BITSTREAM);
+        oapv_assert_rv(remain >= 8, OAPV_ERR_MALFORMED_BITSTREAM);
         oapv_bsr_init(&bs, (u8 *)au + cur_read_size, remain, NULL);
 
         ret = oapvd_vlc_pbu_size(&bs, &pbu_size); // read pbu_size (4 byte)
@@ -2112,6 +2122,7 @@ int oapvd_info(void *au, int au_size, oapv_au_info_t *aui)
         }
         aui->num_frms = frm_count;
         cur_read_size += pbu_size + 4; /* 4byte is for pbu_size syntax itself */
+        pbu_count++;
     } while(cur_read_size < au_size);
     DUMP_SET(1);
     return OAPV_OK;
@@ -2121,3 +2132,6 @@ int oapvd_info(void *au, int au_size, oapv_au_info_t *aui)
 // end of decoder code
 #endif // ENABLE_DECODER
 ///////////////////////////////////////////////////////////////////////////////
+
+static char *oapv_ver = "0.1.13.1";
+char * oapv_version() { return oapv_ver; }
