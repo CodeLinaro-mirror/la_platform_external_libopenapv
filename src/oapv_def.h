@@ -199,6 +199,7 @@ typedef struct oapve_rc_param {
     int    qp;
     double lambda;
     double cost;
+    unsigned char is_updated;
 } oapve_rc_param_t;
 
 typedef struct oapve_rc_tile {
@@ -271,6 +272,7 @@ struct oapve_ctx {
     oapve_param_t            *param;
     oapv_fh_t                 fh;
     oapve_tile_t              tile[OAPV_MAX_TILES];
+    int                       num_tiles_frms[OAPV_MAX_NUM_FRAMES];
     int                       num_tiles;
     int                       num_tile_cols;
     int                       num_tile_rows;
@@ -308,6 +310,7 @@ struct oapve_ctx {
     int                       use_frm_hash;
     oapve_rc_param_t          rc_param;
 
+    int                       threads; // num of thread for encoding
     /* platform specific data, if needed */
     void                     *pf;
 };
@@ -345,7 +348,7 @@ typedef struct oapvd_ctx  oapvd_ctx_t;
 
 struct oapvd_core {
     ALIGNED_16(s16 coef[OAPV_MB_D]);
-    oapvd_ctx_t *ctx;
+    s16          q_mat[N_C][OAPV_BLK_D];
 
     int          prev_dc_ctx[N_C];
     int          prev_1st_ac_ctx[N_C];
@@ -354,10 +357,9 @@ struct oapvd_core {
                           /* and coded as abs_dc_coeff_diff and sign_dc_coeff_diff */
     int          qp[N_C];
     int          dq_shift[N_C];
-    s16          q_mat[N_C][OAPV_BLK_D];
-
     int          tile_idx;
 
+    oapvd_ctx_t *ctx;
     /* platform specific data, if needed */
     void        *pf;
 };
@@ -383,6 +385,7 @@ struct oapvd_ctx {
     int                     num_tile_rows;
     int                     w;
     int                     h;
+    int                     threads;
     oapv_tpool_t           *tpool;
     oapv_thread_t           thread_id[OAPV_MAX_THREADS];
     oapv_sync_obj_t         sync_obj;
@@ -410,6 +413,7 @@ struct oapvd_ctx {
 #include "oapv_tbl.h"
 #include "oapv_rc.h"
 #include "oapv_sad.h"
+#include "oapv_param.h"
 
 #if X86_SSE
 #include "sse/oapv_sad_sse.h"
