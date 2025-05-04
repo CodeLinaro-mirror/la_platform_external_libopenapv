@@ -88,3 +88,36 @@ void oapv_trace_line(char *pre)
     str[chars] = '\0';
     printf("%s\n", str);
 }
+
+#if defined(WIN32) || defined(WIN64) || defined(_WIN32)
+#include <windows.h>
+#include <sysinfoapi.h>
+#else /* LINUX, MACOS, Android */
+#include <unistd.h>
+#endif
+
+int oapv_get_num_cpu_cores(void)
+{
+    int num_cores = 1; // default
+#if defined(WIN32) || defined(WIN64) || defined(_WIN32)
+    {
+        SYSTEM_INFO si;
+        GetNativeSystemInfo(&si);
+        num_cores = si.dwNumberOfProcessors;
+    }
+#elif defined(_SC_NPROCESSORS_ONLN)
+    {
+        num_cores = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    }
+#elif defined(CPU_COUNT)
+    {
+        cpu_set_t cset;
+        memset(&cset, 0, sizeof(cset));
+        if(!sched_getaffinity(0, sizeof(cset), &cset)) {
+            num_cores = CPU_COUNT(&cset);
+        }
+    }
+#endif
+    return num_cores;
+}
+

@@ -80,10 +80,10 @@ void *oapv_bsw_sink(oapv_bs_t *bs)
     return (void *)bs->cur;
 }
 
-int oapv_bsw_write_direct(void *bits, u32 val, int len)
+int oapv_bsw_write_direct(void *addr, u32 val, int len)
 {
     int            i;
-    unsigned char *p = (unsigned char *)bits;
+    unsigned char *p = (unsigned char *)addr;
 
     oapv_assert_rv((len & 0x7) == 0, -1); // len should be byte-aligned
 
