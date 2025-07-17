@@ -1301,6 +1301,8 @@ int oapve_encode(oapve_t eid, oapv_frms_t *ifrms, oapvm_t mid, oapv_bitb_t *bitb
     oapv_bs_t bs_pbu_beg;
     oapv_bsw_write(bs, 0, 32);
 
+    oapv_bsw_write(bs, 0x61507631, 32); // signature ('aPv1')
+
     for(i = 0; i < ifrms->num_frms; i++) {
         frm = &ifrms->frm[i];
 
@@ -1953,6 +1955,13 @@ int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid
     ctx = dec_id_to_ctx(did);
     oapv_assert_rv(ctx, OAPV_ERR_INVALID_ARGUMENT);
 
+    // read signature ('aPv1')
+    oapv_assert_rv(bitb->ssize > 4, OAPV_ERR_MALFORMED_BITSTREAM);
+    u32 signature = oapv_bsr_read_direct(bitb->addr, 32);
+    oapv_assert_rv(signature == 0x61507631, OAPV_ERR_MALFORMED_BITSTREAM);
+    cur_read_size += 4;
+    stat->read += 4;
+
     do {
         u32 remain = bitb->ssize - cur_read_size;
         oapv_assert_gv((remain >= 8), ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
@@ -2064,6 +2073,12 @@ int oapvd_info(void *au, int au_size, oapv_au_info_t *aui)
     u32 cur_read_size = 0;
 
     DUMP_SET(0);
+
+    // read signature ('aPv1')
+    oapv_assert_rv(au_size > 4, OAPV_ERR_MALFORMED_BITSTREAM);
+    u32 signature = oapv_bsr_read_direct(au, 32);
+    oapv_assert_rv(signature == 0x61507631, OAPV_ERR_MALFORMED_BITSTREAM);
+    cur_read_size += 4;
 
     /* 'au' address contains series of PBU */
     do {
