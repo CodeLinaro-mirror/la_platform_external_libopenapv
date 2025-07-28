@@ -42,6 +42,7 @@
 
 #include "oapv.h"
 #include "oapv_port.h"
+#include "oapv_bs.h"
 #include "oapv_tpool.h"
 
 /* oapv encoder magic code */
@@ -63,10 +64,12 @@
 #define N_C                       4 /* maximum number of color component */
 
 #define OAPV_VLC_TREE_LEVEL       2
-#define OAPV_MIN_DC_LEVEL_CTX     0
-#define OAPV_MAX_DC_LEVEL_CTX     5
-#define OAPV_MIN_AC_LEVEL_CTX     0
-#define OAPV_MAX_AC_LEVEL_CTX     4
+#define OAPV_KPARAM_DC_MIN        0
+#define OAPV_KPARAM_DC_MAX        5
+#define OAPV_KPARAM_AC_MIN        0
+#define OAPV_KPARAM_AC_MAX        4
+#define OAPV_KPARAM_RUN_MIN       0
+#define OAPV_KPARAM_RUN_MAX       2
 
 /* Maximum transform dynamic range (excluding sign bit) */
 #define MAX_TX_DYNAMIC_RANGE      15
@@ -121,9 +124,9 @@ struct oapv_fh {
     int       matrix_coefficients;            /* u( 8) */
     int       full_range_flag;                /* u( 1) */
     int       use_q_matrix;                   /* u( 1) */
-    /* (start) quantization_matix  */
+    /* (start) quantization_matrix  */
     int       q_matrix[N_C][OAPV_BLK_H][OAPV_BLK_W]; /* u( 8) */
-    /* ( end ) quantization_matix  */
+    /* ( end ) quantization_matrix  */
     /* (start) tile_info */
     int       tile_width_in_mbs;            /* u(20) */
     int       tile_height_in_mbs;           /* u(20) */
@@ -174,7 +177,7 @@ typedef struct oapve_core oapve_core_t;
  *****************************************************************************/
 typedef void (*oapv_fn_itx_part_t)(s16 *coef, s16 *t, int shift, int line);
 typedef void (*oapv_fn_itx_t)(s16 *coef, int shift1, int shift2, int line);
-typedef void (*oapv_fn_tx_t)(s16 *coef, s16 *t, int shift, int line);
+typedef void (*oapv_fn_tx_t)(s16 *coef, int shift1, int shift2, int line);
 typedef void (*oapv_fn_itx_adj_t)(int *src, int *dst, int itrans_diff_idx, int diff_step, int shift);
 typedef int (*oapv_fn_quant_t)(s16 *coef, u8 qp, int q_matrix[OAPV_BLK_D], int log2_w, int log2_h, int bit_depth, int deadzone_offset);
 typedef void (*oapv_fn_dquant_t)(s16 *coef, s16 q_matrix[OAPV_BLK_D], int log2_w, int log2_h, s8 shift);
@@ -183,10 +186,10 @@ typedef s64 (*oapv_fn_ssd_t)(int w, int h, void *src1, void *src2, int s_src1, i
 typedef void (*oapv_fn_diff_t)(int w, int h, void *src1, void *src2, int s_src1, int s_src2, int s_diff, s16 *diff);
 
 typedef double (*oapv_fn_enc_blk_cost_t)(oapve_ctx_t *ctx, oapve_core_t *core, int log2_w, int log2_h, int c);
-typedef void (*oapv_fn_imgb_to_blk_rc_t)(oapv_imgb_t *imgb, int c, int x_l, int y_l, int w_l, int h_l, s16 *block);
-typedef void (*oapv_fn_imgb_to_blk_t)(void *src, int blk_w, int blk_h, int s_src, int offset_src, int s_dst, void *dst);
-typedef void (*oapv_fn_blk_to_imgb_t)(void *src, int blk_w, int blk_h, int s_src, int offset_dst, int s_dst, void *dst);
-typedef void (*oapv_fn_img_pad_t)(oapve_ctx_t *ctx, oapv_imgb_t *imgb);
+typedef void (*oapv_fn_imgb_to_blk_rc_t)(oapv_imgb_t *imgb, int c, int x_l, int y_l, int w_l, int h_l, s16 *block, int bit_depth);
+typedef void (*oapv_fn_imgb_to_blk_t)(void *src, int blk_w, int blk_h, int s_src, int offset_src, int s_dst, void *dst, int bit_depth);
+typedef void (*oapv_fn_blk_to_imgb_t)(void *src, int blk_w, int blk_h, int s_src, int offset_dst, int s_dst, void *dst, int bit_depth);
+typedef void (*oapv_fn_imgb_pad_t)(oapv_imgb_t *imgb, int aw, int ah, int comp_sft[N_C][2]);
 typedef int (*oapv_fn_had8x8_t)(pel *org, int s_org);
 
 /*****************************************************************************
@@ -222,11 +225,13 @@ typedef struct oapve_rc_tile {
 struct oapve_core {
     ALIGNED_16(s16 coef[OAPV_BLK_D]);
     ALIGNED_16(s16 coef_rec[OAPV_BLK_D]);
-    oapve_ctx_t *ctx;
-    int          prev_dc_ctx[N_C];
-    int          prev_1st_ac_ctx[N_C];
-    int          tile_idx;
+
+    int          kparam_dc[N_C];
+    int          kparam_ac[N_C];
     int          prev_dc[N_C];
+
+    int          tile_idx;
+
     int          dc_diff; /* DC difference, which is represented in 17 bits */
                           /* and coded as abs_dc_coeff_diff and sign_dc_coeff_diff */
     int          qp[N_C]; // QPs for Y, Cb(U), Cr(V)
@@ -234,12 +239,13 @@ struct oapve_core {
 
     int          q_mat_enc[N_C][OAPV_BLK_D];
     s16          q_mat_dec[N_C][OAPV_BLK_D];
+    double       err_scale_tbl[N_C][OAPV_BLK_D];
     int          thread_idx;
+
+    oapve_ctx_t *ctx;
     /* platform specific data, if needed */
     void        *pf;
 };
-
-#include "oapv_bs.h"
 
 typedef struct oapve_tile oapve_tile_t;
 struct oapve_tile {
@@ -266,8 +272,8 @@ struct oapve_ctx {
     u32                       magic; // magic code
     oapve_t                   id;    // identifier
     oapve_cdesc_t             cdesc;
-    oapv_imgb_t              *imgb;
-    oapv_imgb_t              *rec;
+    oapv_imgb_t              *imgb_i;
+    oapv_imgb_t              *imgb_r;
 
     oapve_param_t            *param;
     oapv_fh_t                 fh;
@@ -284,13 +290,11 @@ struct oapve_ctx {
     int                       num_comp;
     int                       bit_depth;
     int                       comp_sft[N_C][2];
-    int                       log2_block;
     oapv_tpool_t             *tpool;
     oapv_thread_t             thread_id[OAPV_MAX_THREADS];
     oapv_sync_obj_t           sync_obj;
     oapve_core_t             *core[OAPV_MAX_THREADS];
 
-    oapv_bs_t                 bs;
     const oapv_fn_itx_part_t *fn_itx_part;
     const oapv_fn_itx_t      *fn_itx;
     const oapv_fn_itx_adj_t  *fn_itx_adj;
@@ -303,7 +307,7 @@ struct oapve_ctx {
     oapv_fn_imgb_to_blk_rc_t  fn_imgb_to_blk_rc;
     oapv_fn_imgb_to_blk_t     fn_imgb_to_blk[N_C];
     oapv_fn_blk_to_imgb_t     fn_blk_to_imgb[N_C];
-    oapv_fn_img_pad_t         fn_img_pad;
+    oapv_fn_imgb_pad_t        fn_imgb_pad;
     oapv_fn_enc_blk_cost_t    fn_enc_blk;
     oapv_fn_had8x8_t          fn_had8x8;
 
@@ -311,6 +315,7 @@ struct oapve_ctx {
     oapve_rc_param_t          rc_param;
 
     int                       threads; // num of thread for encoding
+    int                       au_bs_fmt; // access unit bitstream format
     /* platform specific data, if needed */
     void                     *pf;
 };
@@ -350,8 +355,8 @@ struct oapvd_core {
     ALIGNED_16(s16 coef[OAPV_MB_D]);
     s16          q_mat[N_C][OAPV_BLK_D];
 
-    int          prev_dc_ctx[N_C];
-    int          prev_1st_ac_ctx[N_C];
+    int          kparam_dc[N_C];
+    int          kparam_ac[N_C];
     int          prev_dc[N_C];
     int          dc_diff; /* DC difference, which is represented in 17 bits */
                           /* and coded as abs_dc_coeff_diff and sign_dc_coeff_diff */

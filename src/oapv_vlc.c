@@ -32,244 +32,228 @@
 #include "oapv_def.h"
 #include "oapv_metadata.h"
 
-#define OAPV_FLUSH_SWAP(cur, code, lb) \
-    {                                  \
-        *cur++ = (code >> 24) & 0xFF;  \
-        *cur++ = (code >> 16) & 0xFF;  \
-        *cur++ = (code >> 8) & 0xFF;   \
-        *cur++ = (code) & 0xFF;        \
-        code = 0;                      \
-        lb = 32;                       \
-    }
-
-#define OAPV_FLUSH(bs)                        \
-    {                                         \
-        *bs->cur++ = (bs->code >> 24) & 0xFF; \
-        *bs->cur++ = (bs->code >> 16) & 0xFF; \
-        *bs->cur++ = (bs->code >> 8) & 0xFF;  \
-        *bs->cur++ = (bs->code) & 0xFF;       \
-        bs->code = 0;                         \
-        bs->leftbits = 32;                    \
-    }
-
-#define OAPV_READ_FLUSH(bs, byte)       \
-    {                                   \
-        bs->code = 0;                   \
-        bs->code |= *(bs->cur++) << 24; \
-        bs->code |= *(bs->cur++) << 16; \
-        bs->code |= *(bs->cur++) << 8;  \
-        bs->code |= *(bs->cur++);       \
-        bs->leftbits = 32;              \
-    }
-
 ///////////////////////////////////////////////////////////////////////////////
 // start of encoder code
 #if ENABLE_ENCODER
 ///////////////////////////////////////////////////////////////////////////////
+#define BSW_FLUSH_4BYTE(bs) {                     \
+        *(bs)->cur++ = ((bs)->code >> 24) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 16) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 8) & 0xFF;  \
+        *(bs)->cur++ = ((bs)->code) & 0xFF;       \
+        (bs)->code = 0;                           \
+        (bs)->leftbits = 32;                      \
+    }
 
-static inline void enc_vlc_write(oapv_bs_t *bs, int coef, int k)
+#define BSW_WRITE_32BITS(bs, code32, nbits) { \
+        (code32) <<= (32 - (nbits)); \
+        if((nbits) < (bs)->leftbits) { \
+            (bs)->code |= ((code32) >> (32 - (bs)->leftbits)); \
+            (bs)->leftbits -= (nbits); \
+        } \
+        else { \
+            (bs)->code |= ((code32) >> (32 - (bs)->leftbits)); \
+            (code32) <<= (bs)->leftbits; \
+            (nbits) -= (bs)->leftbits; \
+            BSW_FLUSH_4BYTE(bs); \
+            if((nbits) > 0) { \
+                (bs)->code |= ((code32) >> (32 - (bs)->leftbits)); \
+                (bs)->leftbits -= (nbits); \
+            } \
+        } \
+    }
+
+#define BSW_WRITE_64BITS(bs, code64, nbits) { \
+        (code64) <<= (64 - nbits); \
+        while((nbits) >= (bs)->leftbits) { \
+            (bs)->code |= ((code64) >> (64 - (bs)->leftbits)); \
+            (code64) <<= (bs)->leftbits; \
+            (nbits) -= (bs)->leftbits; \
+            BSW_FLUSH_4BYTE(bs); \
+        } \
+        if((nbits) > 0) { \
+            (bs)->code |= ((code64) >> (64 - (bs)->leftbits)); \
+            (bs)->leftbits -= (nbits); \
+        } \
+    }
+
+#define ADD_BITS_TO_CODE(val, nb, code) ((code) << (nb) | (val))
+
+static const u8 enc_prefix_vlc[3][2] = {{1, 0xFF}, {0, 0}, {0, 1}}; // 0xFF is don't care
+
+static void enc_vlc_write(oapv_bs_t *bs, int val, int k)
 {
-    const s32 simple_vlc_table[3][2] = { {
-                                             1,
-                                         },
-                                         { 0, 0 },
-                                         { 0, 1 } };
-    u32       symbol = coef;
-    u32       simple_vlc_val = oapv_clip3(0, 2, symbol >> k);
-    int       bit_cnt = 0;
-    if(bs->is_bin_count) {
-        bs->bin_count += coef;
-        return;
-    }
-    if(symbol >= (u32)(1 << k)) {
+    u32 code = 0;
+    u32 symbol = val;
+    int nb = 0;
+    int vlc_idx = oapv_min(val >> k, 2);  // 'val' is always positive or zero
+
+    while(symbol >= (1 << k)) {
         symbol -= (1 << k);
-        int val = simple_vlc_table[simple_vlc_val][bit_cnt];
-        bs->leftbits--;
-        bs->code |= ((val & 0x1) << bs->leftbits);
-        if(bs->leftbits == 0) {
-            OAPV_FLUSH(bs);
+        if(nb < 2) {
+            code = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code);
         }
-        bit_cnt++;
-    }
-    if(symbol >= (u32)(1 << k) && simple_vlc_val > 0) {
-        symbol -= (1 << k);
-        int val = simple_vlc_table[simple_vlc_val][bit_cnt];
-        bs->leftbits--;
-        bs->code |= ((val & 0x1) << bs->leftbits);
-        if(bs->leftbits == 0) {
-            OAPV_FLUSH(bs);
-        }
-        bit_cnt++;
-    }
-    while(symbol >= (u32)(1 << k)) {
-        symbol -= (1 << k);
-        bs->leftbits--;
-        if(bs->leftbits == 0) {
-            OAPV_FLUSH(bs);
-        }
-        if(bit_cnt >= 2) {
+        else {
+            code = ADD_BITS_TO_CODE(0, 1, code);
             k++;
         }
-        bit_cnt++;
+        nb++;
     }
-    if(bit_cnt < 2) {
-        int val = simple_vlc_table[simple_vlc_val][bit_cnt];
-        bs->leftbits--;
-        bs->code |= ((val & 0x1) << bs->leftbits);
-        if(bs->leftbits == 0) {
-            OAPV_FLUSH(bs);
-        }
+    if(nb < 2) {
+        code = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code);
     }
     else {
-        bs->leftbits--;
-        bs->code |= ((1 & 0x1) << bs->leftbits);
-        if(bs->leftbits == 0) {
-            OAPV_FLUSH(bs);
-        }
+        code = ADD_BITS_TO_CODE(1, 1, code);
     }
+    nb++;
     if(k > 0) {
-        int leftbits;
-        leftbits = bs->leftbits;
-        symbol <<= (32 - k);
-        bs->code |= (symbol >> (32 - leftbits));
-        if(k < leftbits) {
-            bs->leftbits -= k;
+        code = ADD_BITS_TO_CODE(symbol, k, code);
+        nb += k;
+    }
+    // write to bitstream buffer
+    BSW_WRITE_32BITS(bs, code, nb);
+}
+
+static u32 enc_vlc_write_to_code(oapv_bs_t *bs, int val, int k, int *nbits)
+{
+    u32 code = 0;
+    u32 symbol = val;
+    int nb = 0;
+    int vlc_idx = oapv_min(val >> k, 2);  // 'val' is always positive or zero
+
+    while(symbol >= (1 << k)) {
+        symbol -= (1 << k);
+        if(nb < 2) {
+            code = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code);
         }
         else {
-            bs->leftbits = 0;
-            OAPV_FLUSH(bs);
-            bs->code = (leftbits < 32 ? symbol << leftbits : 0);
-            bs->leftbits = 32 - (k - leftbits);
+            code = ADD_BITS_TO_CODE(0, 1, code);
+            k++;
+        }
+        nb++;
+    }
+    if(nb < 2) {
+        code = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code);
+    }
+    else {
+        code = ADD_BITS_TO_CODE(1, 1, code);
+
+    }
+    nb++;
+    if(k > 0) {
+        code = ADD_BITS_TO_CODE(symbol, k, code);
+        nb += k;
+    }
+    *nbits = nb;
+    return code;
+}
+
+static int enc_vlc_quantization_matrix(oapv_bs_t *bs, oapve_ctx_t *ctx, oapv_fh_t *fh)
+{
+    for(int cidx = 0; cidx < ctx->num_comp; cidx++) {
+        for(int y = 0; y < 8; y++) {
+            for(int x = 0; x < 8; x++) {
+                oapv_bsw_write(bs, fh->q_matrix[cidx][y][x], 8);
+                DUMP_HLS(fh->q_matrix, fh->q_matrix[cidx][y][x]);
+            }
         }
     }
+    return 0;
 }
 
-static void inline bsr_skip_code_opt(oapv_bs_t *bs, int size)
+static int enc_vlc_tile_info(oapv_bs_t *bs, oapve_ctx_t *ctx, oapv_fh_t *fh)
 {
+    oapv_bsw_write(bs, fh->tile_width_in_mbs, 20);
+    DUMP_HLS(fh->tile_width_in_mbs, fh->tile_width_in_mbs);
+    oapv_bsw_write(bs, fh->tile_height_in_mbs, 20);
+    DUMP_HLS(fh->tile_height_in_mbs, fh->tile_height_in_mbs);
+    oapv_bsw_write(bs, fh->tile_size_present_in_fh_flag, 1);
+    DUMP_HLS(fh->tile_size_present_in_fh_flag, fh->tile_size_present_in_fh_flag);
+    if(fh->tile_size_present_in_fh_flag) {
+        for(int i = 0; i < ctx->num_tiles; i++) {
+            oapv_bsw_write(bs, fh->tile_size[i], 32);
+            DUMP_HLS(fh->tile_size, fh->tile_size[i]);
+        }
+    }
 
-    if(size == 32) {
-        bs->code = 0;
-        bs->leftbits = 0;
-    }
-    else {
-        bs->code <<= size;
-        bs->leftbits -= size;
-    }
+    return 0;
 }
-static int dec_vlc_read_1bit_read(oapv_bs_t *bs, int k)
+
+int oapve_vlc_dc_coef(oapv_bs_t *bs, int dc_diff, int *kparam_dc)
 {
-    u32 symbol = 0;
-    int t0 = -1;
-    int parse_exp_golomb = 1;
-    if(bs->leftbits == 0) {
-        OAPV_READ_FLUSH(bs, 4);
-    }
-    t0 = (u32)(bs->code >> 31);
-    bs->code <<= 1;
-    bs->leftbits -= 1;
-    if(t0 == 0) {
-        symbol += (1 << k);
-        parse_exp_golomb = 0;
+    u32 code;
+    int nbits;
+    int abs_dc_diff = oapv_abs32(dc_diff);
+
+    code = enc_vlc_write_to_code(bs, abs_dc_diff, *kparam_dc, &nbits);
+
+    if(abs_dc_diff) {
+        int sign_dc_diff = oapv_get_sign32(dc_diff);
+        code = ADD_BITS_TO_CODE(sign_dc_diff, 1, code);
+        *kparam_dc = KPARAM_DC(abs_dc_diff);
+        nbits++;
     }
     else {
-        symbol += (2 << k);
-        parse_exp_golomb = 1;
+        *kparam_dc = OAPV_KPARAM_DC_MIN;
     }
-    if(parse_exp_golomb) {
-        while(1) {
-            if(bs->leftbits == 0) {
-                OAPV_READ_FLUSH(bs, 4);
-            }
-            t0 = (u32)(bs->code >> 31);
-            bs->code <<= 1;
-            bs->leftbits -= 1;
-            if(t0 == 1) {
-                break;
+    BSW_WRITE_32BITS(bs, code, nbits);
+    return OAPV_OK;
+}
+
+void oapve_vlc_ac_coef(oapv_bs_t* bs, s16* coef, int * kparam_ac)
+{
+    int       scan_pos, first_ac = 1;
+    int       sign, level, run = 0;
+    s16       c;
+    const u8 *scanp = oapv_tbl_scan;
+    int       k_run = OAPV_KPARAM_RUN_MIN;
+    int       k_ac = *kparam_ac;
+    u32       code;
+    int       nbits;
+
+    for (scan_pos = 1; scan_pos < OAPV_BLK_D; scan_pos++) {
+        c = coef[scanp[scan_pos]];
+        if(c) {
+            // run coding
+            code = oapve_tbl_vlc_code[run][k_run][0];
+            nbits = oapve_tbl_vlc_code[run][k_run][1];
+            k_run = KPARAM_RUN(run); // update kparam for run
+            run = 0; // reset run
+            BSW_WRITE_32BITS(bs, code, nbits);
+
+            // level and sign coding
+            level = oapv_abs16(c);
+            if(level < 101) { // early termination
+                code  = oapve_tbl_vlc_code[level - 1][k_ac][0];
+                nbits = oapve_tbl_vlc_code[level - 1][k_ac][1];
             }
             else {
-                symbol += (1 << k);
-                k++;
+                code = enc_vlc_write_to_code(bs, level - 1, k_ac, &nbits);
             }
-        }
-    }
-    if(k > 0) {
-        u32 code = 0;
-        if(bs->leftbits < k) {
-            code = bs->code >> (32 - k);
-            k -= bs->leftbits;
-            OAPV_READ_FLUSH(bs, 4);
-        }
-        code |= bs->code >> (32 - k);
-        bsr_skip_code_opt(bs, k);
-        symbol += code;
-    }
-    return symbol;
-}
-
-static int dec_vlc_read(oapv_bs_t *bs, int k)
-{
-    u32 symbol = 0;
-    int t0 = -1;
-    int parse_exp_golomb = 1;
-    if(bs->leftbits == 0) {
-        OAPV_READ_FLUSH(bs, 4);
-    }
-    t0 = (u32)(bs->code >> 31);
-    bs->code <<= 1;
-    bs->leftbits -= 1;
-    if(t0 == 1) {
-        parse_exp_golomb = 0;
-    }
-    else {
-        if(bs->leftbits == 0) {
-            OAPV_READ_FLUSH(bs, 4);
-        }
-        t0 = (u32)(bs->code >> 31);
-        bs->code <<= 1;
-        bs->leftbits -= 1;
-        if(t0 == 0) {
-            symbol += (1 << k);
-            parse_exp_golomb = 0;
-        }
-        else {
-            symbol += (2 << k);
-            parse_exp_golomb = 1;
-        }
-    }
-    if(parse_exp_golomb) {
-        while(1) {
-            if(bs->leftbits == 0) {
-                OAPV_READ_FLUSH(bs, 4);
+            k_ac = KPARAM_AC(level);
+            if (first_ac) {
+                first_ac = 0;
+                *kparam_ac = k_ac;
             }
-            t0 = (u32)(bs->code >> 31);
-            bs->code <<= 1;
-            bs->leftbits -= 1;
-            if(t0 == 1) {
-                break;
-            }
-            else {
-                symbol += (1 << k);
-                k++;
-            }
+            sign  = oapv_get_sign16(c);
+            code = ADD_BITS_TO_CODE(sign, 1, code);
+            nbits++;
+            BSW_WRITE_32BITS(bs, code, nbits);
+        }
+        else { // zero coefficent value
+            run++;
         }
     }
-    if(k > 0) {
-        u32 code = 0;
-        if(bs->leftbits < k) {
-            code = bs->code >> (32 - k);
-            k -= bs->leftbits;
-            OAPV_READ_FLUSH(bs, 4);
-        }
-        code |= bs->code >> (32 - k);
-        bsr_skip_code_opt(bs, k);
-        symbol += code;
+    if(run > 0) { // last position can be zero
+        code = oapve_tbl_vlc_code[run][k_run][0];
+        nbits = oapve_tbl_vlc_code[run][k_run][1];
+        BSW_WRITE_32BITS(bs, code, nbits);
     }
-    return symbol;
 }
 
 void oapve_set_frame_header(oapve_ctx_t *ctx, oapv_fh_t *fh)
 {
-    oapve_param_t * param = ctx->param;
+    oapve_param_t *param = ctx->param;
 
     oapv_mset(fh, 0, sizeof(oapv_fh_t));
     fh->fi.profile_idc = param->profile_idc;
@@ -309,35 +293,19 @@ void oapve_set_frame_header(oapve_ctx_t *ctx, oapv_fh_t *fh)
     fh->tile_size_present_in_fh_flag = 0;
 }
 
-static int enc_vlc_quantization_matrix(oapv_bs_t *bs, oapve_ctx_t *ctx, oapv_fh_t *fh)
+void oapve_set_tile_header(oapve_ctx_t *ctx, oapv_th_t *th, int tile_idx, int qp)
 {
-    for(int cidx = 0; cidx < ctx->num_comp; cidx++) {
-        for(int y = 0; y < 8; y++) {
-            for(int x = 0; x < 8; x++) {
-                oapv_bsw_write(bs, fh->q_matrix[cidx][y][x], 8);
-                DUMP_HLS(fh->q_matrix, fh->q_matrix[cidx][y][x]);
-            }
-        }
-    }
-    return 0;
-}
+    oapv_mset(th, 0, sizeof(oapv_th_t));
 
-static int enc_vlc_tile_info(oapv_bs_t *bs, oapve_ctx_t *ctx, oapv_fh_t *fh)
-{
-    oapv_bsw_write(bs, fh->tile_width_in_mbs, 20);
-    DUMP_HLS(fh->tile_width_in_mbs, fh->tile_width_in_mbs);
-    oapv_bsw_write(bs, fh->tile_height_in_mbs, 20);
-    DUMP_HLS(fh->tile_height_in_mbs, fh->tile_height_in_mbs);
-    oapv_bsw_write(bs, fh->tile_size_present_in_fh_flag, 1);
-    DUMP_HLS(fh->tile_size_present_in_fh_flag, fh->tile_size_present_in_fh_flag);
-    if(fh->tile_size_present_in_fh_flag) {
-        for(int i = 0; i < ctx->num_tiles; i++) {
-            oapv_bsw_write(bs, fh->tile_size[i], 32);
-            DUMP_HLS(fh->tile_size, fh->tile_size[i]);
-        }
+    for(int c = 0; c < ctx->num_comp; c++) {
+        th->tile_qp[c] = oapv_clip3(MIN_QUANT, MAX_QUANT(10), qp + ctx->qp_offset[c]);
     }
+    th->tile_index = tile_idx;
 
-    return 0;
+    for(int i = 0; i < N_C; i++) {
+        // this setting is required to prevent underflow at dummy writing tile header due to '-1'.
+        th->tile_data_size[i] = 1;
+    }
 }
 
 int oapve_vlc_frame_info(oapv_bs_t *bs, oapv_fi_t *fi)
@@ -404,21 +372,6 @@ int oapve_vlc_tile_size(oapv_bs_t *bs, int tile_size)
     return OAPV_OK;
 }
 
-void oapve_set_tile_header(oapve_ctx_t *ctx, oapv_th_t *th, int tile_idx, int qp)
-{
-    oapv_mset(th, 0, sizeof(oapv_th_t));
-
-    for(int c = 0; c < ctx->num_comp; c++) {
-        th->tile_qp[c] = oapv_clip3(MIN_QUANT, MAX_QUANT(10), qp + ctx->qp_offset[c]);
-    }
-    th->tile_index = tile_idx;
-
-    for(int i = 0; i < N_C; i++) {
-        // this setting is required to prevent underflow at dummy writing tile header due to '-1'.
-        th->tile_data_size[i] = 1;
-    }
-}
-
 int oapve_vlc_tile_header(oapve_ctx_t *ctx, oapv_bs_t *bs, oapv_th_t *th)
 {
     oapv_assert_rv(bsw_is_align8(bs), OAPV_ERR_MALFORMED_BITSTREAM);
@@ -441,92 +394,6 @@ int oapve_vlc_tile_header(oapve_ctx_t *ctx, oapv_bs_t *bs, oapv_th_t *th)
     DUMP_HLS(th->reserved_zero_8bits, th->reserved_zero_8bits);
 
     return OAPV_OK;
-}
-
-void oapve_vlc_run_length_cc(oapve_ctx_t *ctx, oapve_core_t *core, oapv_bs_t *bs, s16 *coef, int log2_w, int log2_h, int num_sig, int ch_type)
-{
-    u32        num_coeff, scan_pos;
-    u32        sign, level, prev_level, run;
-    const u16 *scanp;
-    s16        coef_cur;
-
-    scanp = oapv_tbl_scan;
-    num_coeff = 1 << (log2_w + log2_h);
-    run = 0;
-    int first_ac = 1;
-    prev_level = core->prev_1st_ac_ctx[ch_type];
-
-    int prev_run = 0;
-
-    int rice_level = 0;
-    scan_pos = 0;
-
-    // for DC
-    {
-        coef_cur = coef[scanp[scan_pos]];
-        level = oapv_abs16(coef_cur);
-        sign = (coef_cur > 0) ? 0 : 1;
-
-        rice_level = oapv_clip3(OAPV_MIN_DC_LEVEL_CTX, OAPV_MAX_DC_LEVEL_CTX, core->prev_dc_ctx[ch_type] >> 1);
-
-        enc_vlc_write(bs, level, rice_level);
-
-        if(level)
-            oapv_bsw_write1(bs, sign);
-
-        core->prev_dc_ctx[ch_type] = level;
-    }
-
-    for(scan_pos = 1; scan_pos < num_coeff; scan_pos++) {
-        coef_cur = coef[scanp[scan_pos]];
-
-        if(coef_cur) {
-            level = oapv_abs16(coef_cur);
-            sign = (coef_cur > 0) ? 0 : 1;
-
-            /* Run coding */
-            int rice_run = 0;
-            rice_run = prev_run / 4;
-            if(rice_run > 2)
-                rice_run = 2;
-            enc_vlc_write(bs, run, rice_run);
-
-            /* Level coding */
-            rice_level = oapv_clip3(OAPV_MIN_AC_LEVEL_CTX, OAPV_MAX_AC_LEVEL_CTX, prev_level >> 2);
-            enc_vlc_write(bs, level - 1, rice_level);
-
-            /* Sign coding */
-            oapv_bsw_write1(bs, sign);
-
-            if(first_ac) {
-                first_ac = 0;
-                core->prev_1st_ac_ctx[ch_type] = level;
-            }
-
-            if(scan_pos == num_coeff - 1) {
-                break;
-            }
-            prev_run = run;
-            run = 0;
-
-            {
-                prev_level = level;
-            }
-
-            num_sig--;
-        }
-        else {
-            run++;
-        }
-    }
-
-    if(coef[scanp[num_coeff - 1]] == 0) {
-        int rice_run = 0;
-        rice_run = prev_run / 4;
-        if(rice_run > 2)
-            rice_run = 2;
-        enc_vlc_write(bs, run, rice_run);
-    }
 }
 
 int oapve_vlc_au_info(oapv_bs_t *bs, oapve_ctx_t *ctx, oapv_frms_t *frms, oapv_bs_t **bs_fi_pos)
@@ -572,11 +439,13 @@ int oapve_vlc_pbu_header(oapv_bs_t *bs, int pbu_type, int group_id)
     return OAPV_OK;
 }
 
-/****** ENABLE_DECODER ******/
 int oapve_vlc_metadata(oapv_md_t *md, oapv_bs_t *bs)
 {
-    oapv_bsw_write(bs, md->md_size, 32);
-    DUMP_HLS(metadata_size, md->md_size);
+    u8 *bs_pos_md;
+    bs_pos_md = oapv_bsw_sink(bs);
+
+    oapv_bsw_write(bs, 0, 32); // raw bitstream byte size (skip)
+
     oapv_mdp_t *mdp = md->md_payload;
 
     while(mdp != NULL) {
@@ -606,7 +475,113 @@ int oapve_vlc_metadata(oapv_md_t *md, oapv_bs_t *bs)
 
         mdp = mdp->next;
     }
+    u32 md_size = (u32)((u8 *)oapv_bsw_sink(bs) - bs_pos_md) - 4;
+    oapv_bsw_write_direct(bs_pos_md, md_size, 32);
+    DUMP_HLS(metadata_size, md_size);
+
     return OAPV_OK;
+}
+
+static __inline int get_vlc_rate(int val, int k)
+{
+    if (val < 100 && k < 5)
+    {
+        return oapve_tbl_vlc_code[val][k][1];
+    }
+
+    int code_len = 0;
+    code_len++;
+    if (val < (1 << k))
+    {
+        code_len += k;
+    }
+    else
+    {
+        val -= (1 << k);
+        code_len++;
+        if (val < (1 << k))
+        {
+            code_len += k;
+        }
+        else
+        {
+            val -= (1 << k);
+            while (val >= (1 << k))
+            {
+                code_len++;
+                val -= (1 << k);
+                k++;
+            }
+            code_len += k + 1;
+        }
+    }
+
+    return code_len;
+}
+
+double oapve_vlc_get_level_cost(int coef, int k, double lambda)
+{
+    s32 rate = 0;
+    rate = get_vlc_rate(coef, k);
+    if (coef)
+        rate += 1; // sign
+    return (rate * lambda);
+}
+
+double oapve_vlc_get_run_cost(int run, int k, double lambda)
+{
+    s32 rate = 0;
+    rate = get_vlc_rate(run, k);
+    return (rate * lambda);
+}
+
+int oapve_vlc_get_coef_rate(oapve_core_t* core, s16* coef, int c)
+{
+    int rate = 0;
+    int rice_run = 0;
+    int prev_run = 0;
+
+    // DC
+    int level = oapv_abs32(coef[0] - core->prev_dc[c]);
+    int rice_level = core->kparam_dc[c];
+
+    rate += get_vlc_rate(level, rice_level);
+    if(level) {
+        rate++;
+    }
+
+    u32 num_coeff = OAPV_BLK_D, scan_pos, run = 0;
+    const u8* scanp = oapv_tbl_scan;
+
+    // AC
+    rice_level = core->kparam_ac[c];
+    for(scan_pos = 1; scan_pos < num_coeff; scan_pos++) {
+        int coef_cur = coef[scanp[scan_pos]];
+        if(coef_cur) {
+            level = oapv_abs16(coef_cur);
+            rice_run = oapv_min(prev_run >> 2, 2);
+            rice_level = oapv_clip3(OAPV_KPARAM_AC_MIN, OAPV_KPARAM_AC_MAX, rice_level);
+
+            rate += get_vlc_rate(run, rice_run);
+            rate += get_vlc_rate(level - 1, rice_level);
+            if(level) {
+                rate++;
+            }
+
+            prev_run = run;
+            run = 0;
+            rice_level = level >> 2;
+        }
+        else {
+            run++;
+        }
+    }
+    if(run != 0) {
+        rice_run = oapv_min(prev_run >> 2, 2);
+        rate += get_vlc_rate(run, rice_run);
+    }
+
+    return rate;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -618,6 +593,288 @@ int oapve_vlc_metadata(oapv_md_t *md, oapv_bs_t *bs)
 // start of decoder code
 #if ENABLE_DECODER
 ///////////////////////////////////////////////////////////////////////////////
+#define BSR_FLUSH_1BYTE(bs) {                   \
+        (bs)->code = *((bs)->cur++) << 24;      \
+        (bs)->leftbits = 8;                     \
+    }
+
+#define BSR_READ_1BIT(bs, bit) {                \
+        (bit) = ((bs)->code >> 31) & 0x1;       \
+        (bs)->code <<= 1;                       \
+        (bs)->leftbits -= 1;                    \
+    }
+
+static int dec_vlc_read_kparam0(oapv_bs_t *bs)
+{
+    int symbol;
+    int flag, k;
+
+    symbol = 2;
+    k = 0;
+
+    while(1) {
+        if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+        BSR_READ_1BIT(bs, flag);
+
+        if(flag) {
+            break;
+        }
+        else {
+            k++;
+        }
+    }
+    if(k > 0) {
+        symbol += ((u32)0xFFFFFFFF) >> (32 - k);
+
+        while(bs->leftbits < k) {
+            symbol += bs->code >> (32 - k);
+            k -= bs->leftbits;
+            BSR_FLUSH_1BYTE(bs);
+        }
+        symbol += bs->code >> (32 - k);
+        bs->code <<= k;
+        bs->leftbits -= k;
+    }
+    return symbol;
+}
+
+static int dec_vlc_read_1bit_read(oapv_bs_t *bs)
+{
+    int symbol;
+    int flag, k;
+
+    if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+    BSR_READ_1BIT(bs, flag);
+
+    symbol = (1 + flag);
+    k = 0;
+    if(flag) { // parse_exp_golomb
+        while(1) {
+            if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+            BSR_READ_1BIT(bs, flag);
+
+            if(flag) {
+                break;
+            }
+            else {
+                k++;
+            }
+        }
+    }
+    if(k > 0) {
+        symbol += ((u32)0xFFFFFFFF) >> (32 - k);
+
+        while(bs->leftbits < k) {
+            symbol += bs->code >> (32 - k);
+            k -= bs->leftbits;
+            BSR_FLUSH_1BYTE(bs);
+        }
+        symbol += bs->code >> (32 - k);
+        bs->code <<= k;
+        bs->leftbits -= k;
+    }
+    return symbol;
+}
+
+static int dec_vlc_read(oapv_bs_t *bs, int k)
+{
+    int symbol;
+    int flag;
+    int parse_exp_golomb = 0;
+
+    if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+    BSR_READ_1BIT(bs, flag);
+
+    if(flag == 0) {
+        if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+        BSR_READ_1BIT(bs, flag);
+
+        symbol = (1 + flag) << k;
+        parse_exp_golomb = flag;
+    }
+    else {
+        symbol = 0;
+    }
+    if(parse_exp_golomb) {
+        while(1) {
+            if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+            BSR_READ_1BIT(bs, flag);
+
+            if(flag == 1) {
+                break;
+            }
+            else {
+                symbol += (1 << k);
+                k++;
+            }
+        }
+    }
+    if(k > 0) {
+        while(bs->leftbits < k) {
+            symbol += bs->code >> (32 - k);
+            k -= bs->leftbits;
+            BSR_FLUSH_1BYTE(bs);
+        }
+        symbol += bs->code >> (32 - k);
+        bs->code <<= k;
+        bs->leftbits -= k;
+    }
+    return symbol;
+}
+
+static int dec_vlc_q_matrix(oapv_bs_t *bs, oapv_fh_t *fh)
+{
+    int num_comp = get_num_comp(fh->fi.chroma_format_idc);
+    for(int cidx = 0; cidx < num_comp; cidx++) {
+        for(int y = 0; y < OAPV_BLK_H; y++) {
+            for(int x = 0; x < OAPV_BLK_W; x++) {
+                fh->q_matrix[cidx][y][x] = oapv_bsr_read(bs, 8);
+                DUMP_HLS(fh->q_matrix, fh->q_matrix[cidx][y][x]);
+                oapv_assert_rv(fh->q_matrix[cidx][y][x] > 0, OAPV_ERR_MALFORMED_BITSTREAM);
+            }
+        }
+    }
+    return OAPV_OK;
+}
+
+static int dec_vlc_tile_info(oapv_bs_t *bs, oapv_fh_t *fh)
+{
+    int pic_w, pic_h, tile_w, tile_h, tile_cols, tile_rows;
+
+    fh->tile_width_in_mbs = oapv_bsr_read(bs, 20);
+    DUMP_HLS(fh->tile_width_in_mbs, fh->tile_width_in_mbs);
+    oapv_assert_rv(fh->tile_width_in_mbs > 0, OAPV_ERR_MALFORMED_BITSTREAM);
+
+    fh->tile_height_in_mbs = oapv_bsr_read(bs, 20);
+    DUMP_HLS(fh->tile_height_in_mbs, fh->tile_height_in_mbs);
+    oapv_assert_rv(fh->tile_height_in_mbs > 0, OAPV_ERR_MALFORMED_BITSTREAM);
+
+    /* set various value */
+    pic_w = ((fh->fi.frame_width + (OAPV_MB_W - 1)) >> OAPV_LOG2_MB_W) << OAPV_LOG2_MB_W;
+    pic_h = ((fh->fi.frame_height + (OAPV_MB_H - 1)) >> OAPV_LOG2_MB_H) << OAPV_LOG2_MB_H;
+
+    tile_w = fh->tile_width_in_mbs * OAPV_MB_W;
+    tile_h = fh->tile_height_in_mbs * OAPV_MB_H;
+
+    tile_cols = (pic_w + (tile_w - 1)) / tile_w;
+    tile_rows = (pic_h + (tile_h - 1)) / tile_h;
+
+    oapv_assert_rv(tile_cols <= OAPV_MAX_TILE_COLS && tile_rows <= OAPV_MAX_TILE_ROWS, OAPV_ERR_MALFORMED_BITSTREAM)
+
+    fh->tile_size_present_in_fh_flag = oapv_bsr_read1(bs);
+    DUMP_HLS(fh->tile_size_present_in_fh_flag, fh->tile_size_present_in_fh_flag);
+
+    if(fh->tile_size_present_in_fh_flag) {
+        for(int i = 0; i < tile_cols * tile_rows; i++) {
+            fh->tile_size[i] = oapv_bsr_read(bs, 32);
+            DUMP_HLS(fh->tile_size, fh->tile_size[i]);
+            oapv_assert_rv(fh->tile_size[i] > 0, OAPV_ERR_MALFORMED_BITSTREAM);
+        }
+    }
+    return OAPV_OK;
+}
+
+int oapvd_vlc_dc_coef(oapv_bs_t *bs, int *dc_diff, int *kparam_dc)
+{
+    int abs_dc_diff;
+    int sign;
+
+    abs_dc_diff = dec_vlc_read(bs, *kparam_dc);
+    if(abs_dc_diff) {
+        if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+        BSR_READ_1BIT(bs, sign);
+        *dc_diff = oapv_set_sign16(abs_dc_diff, sign);
+        *kparam_dc = KPARAM_DC(abs_dc_diff);
+    }
+    else {
+        *dc_diff = 0;
+        *kparam_dc = OAPV_KPARAM_DC_MIN;
+    }
+    return OAPV_OK;
+}
+
+int oapvd_vlc_ac_coef(oapv_bs_t *bs, s16 *coef, int *kparam_ac)
+{
+    int        level, run, k_ac, k_run, flag;
+    int        scan_pos_offset;
+    const u8  *scanp;
+
+    scanp = oapv_tbl_scan;
+    scan_pos_offset = 1;
+
+    int first_ac = 1;
+    k_run = OAPV_KPARAM_RUN_MIN;
+    k_ac = *kparam_ac;
+
+    do {
+        // run parsing
+        if(k_run == 0) { // early termination
+            if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+            BSR_READ_1BIT(bs, flag);
+
+            if(flag) {
+                run = 0;
+            }
+            else {
+                if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+                BSR_READ_1BIT(bs, flag);
+
+                if(flag == 0) {
+                    run = 1;
+                }
+                else {
+                    run = dec_vlc_read_kparam0(bs);
+                }
+            }
+        }
+        else {
+            run = dec_vlc_read(bs, k_run);
+        }
+
+        // here, no need to set 'zero-run' in coef; it's already initialized to zero.
+
+        scan_pos_offset += run;
+        if(scan_pos_offset >= OAPV_BLK_D) {
+            oapv_assert_rv(scan_pos_offset == OAPV_BLK_D, OAPV_ERR_MALFORMED_BITSTREAM); // bitstream error
+            break; // reached the end of coefficients without level value
+        }
+        k_run = KPARAM_RUN(run); // backup
+
+        // level parsing
+        if(k_ac == 0) {
+            if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+            BSR_READ_1BIT(bs, flag);
+
+            if(flag) {
+                level = 1;
+            }
+            else {
+                level = dec_vlc_read_1bit_read(bs) + 1;
+            }
+        }
+        else {
+            level = dec_vlc_read(bs, k_ac) + 1;
+        }
+        k_ac = KPARAM_AC(level);
+
+        if(first_ac) {
+            first_ac = 0;
+            *kparam_ac = k_ac; // backup
+        }
+
+        // sign parsing
+        if(bs->leftbits == 0) BSR_FLUSH_1BYTE(bs);
+        BSR_READ_1BIT(bs, flag);
+
+        coef[scanp[scan_pos_offset++]] = oapv_set_sign16(level, flag);
+
+        if(scan_pos_offset >= OAPV_BLK_D) {
+            break;
+        }
+    } while(1);
+    return OAPV_OK;
+}
+
 int oapvd_vlc_au_size(oapv_bs_t *bs, u32 *au_size)
 {
     u32 size;
@@ -702,7 +959,7 @@ int oapvd_vlc_frame_info(oapv_bs_t *bs, oapv_fi_t *fi)
     // check frame width in case of 422 format.
     if(fi->chroma_format_idc == 2) {
         // frame_width should be multiple of 2
-        oapv_assert_rv((fi->frame_width & 0x1) == 0, OAPV_ERR_MALFORMED_BITSTREAM);
+        oapv_assert_rv((fi->frame_width & 0x1) == 0, OAPV_ERR_INVALID_WIDTH);
     }
 
     return OAPV_OK;
@@ -732,58 +989,6 @@ int oapvd_vlc_au_info(oapv_bs_t *bs, oapv_aui_t *aui)
     oapv_assert_rv(reserved_zero_8bits == 0, OAPV_ERR_MALFORMED_BITSTREAM);
     /* byte align */
     oapv_bsr_align8(bs);
-    return OAPV_OK;
-}
-
-static int dec_vlc_q_matrix(oapv_bs_t *bs, oapv_fh_t *fh)
-{
-    int num_comp = get_num_comp(fh->fi.chroma_format_idc);
-    for(int cidx = 0; cidx < num_comp; cidx++) {
-        for(int y = 0; y < OAPV_BLK_H; y++) {
-            for(int x = 0; x < OAPV_BLK_W; x++) {
-                fh->q_matrix[cidx][y][x] = oapv_bsr_read(bs, 8);
-                DUMP_HLS(fh->q_matrix, fh->q_matrix[cidx][y][x]);
-                oapv_assert_rv(fh->q_matrix[cidx][y][x] > 0, OAPV_ERR_MALFORMED_BITSTREAM);
-            }
-        }
-    }
-    return OAPV_OK;
-}
-
-static int dec_vlc_tile_info(oapv_bs_t *bs, oapv_fh_t *fh)
-{
-    int pic_w, pic_h, tile_w, tile_h, tile_cols, tile_rows;
-
-    fh->tile_width_in_mbs = oapv_bsr_read(bs, 20);
-    DUMP_HLS(fh->tile_width_in_mbs, fh->tile_width_in_mbs);
-    oapv_assert_rv(fh->tile_width_in_mbs > 0, OAPV_ERR_MALFORMED_BITSTREAM);
-
-    fh->tile_height_in_mbs = oapv_bsr_read(bs, 20);
-    DUMP_HLS(fh->tile_height_in_mbs, fh->tile_height_in_mbs);
-    oapv_assert_rv(fh->tile_height_in_mbs > 0, OAPV_ERR_MALFORMED_BITSTREAM);
-
-    /* set various value */
-    pic_w = ((fh->fi.frame_width + (OAPV_MB_W - 1)) >> OAPV_LOG2_MB_W) << OAPV_LOG2_MB_W;
-    pic_h = ((fh->fi.frame_height + (OAPV_MB_H - 1)) >> OAPV_LOG2_MB_H) << OAPV_LOG2_MB_H;
-
-    tile_w = fh->tile_width_in_mbs * OAPV_MB_W;
-    tile_h = fh->tile_height_in_mbs * OAPV_MB_H;
-
-    tile_cols = (pic_w + (tile_w - 1)) / tile_w;
-    tile_rows = (pic_h + (tile_h - 1)) / tile_h;
-
-    oapv_assert_rv(tile_cols <= OAPV_MAX_TILE_COLS && tile_rows <= OAPV_MAX_TILE_ROWS, OAPV_ERR_MALFORMED_BITSTREAM)
-
-    fh->tile_size_present_in_fh_flag = oapv_bsr_read1(bs);
-    DUMP_HLS(fh->tile_size_present_in_fh_flag, fh->tile_size_present_in_fh_flag);
-
-    if(fh->tile_size_present_in_fh_flag) {
-        for(int i = 0; i < tile_cols * tile_rows; i++) {
-            fh->tile_size[i] = oapv_bsr_read(bs, 32);
-            DUMP_HLS(fh->tile_size, fh->tile_size[i]);
-            oapv_assert_rv(fh->tile_size[i] > 0, OAPV_ERR_MALFORMED_BITSTREAM);
-        }
-    }
     return OAPV_OK;
 }
 
@@ -880,435 +1085,9 @@ int oapvd_vlc_tile_header(oapv_bs_t *bs, oapvd_ctx_t *ctx, oapv_th_t *th)
     return OAPV_OK;
 }
 
-int oapve_vlc_dc_coeff(oapve_ctx_t *ctx, oapve_core_t *core, oapv_bs_t *bs, int dc_diff, int c)
-{
-    int rice_level = 0;
-    int abs_dc_diff = oapv_abs32(dc_diff);
-    int sign_dc_diff = (dc_diff > 0) ? 0 : 1;
-
-    rice_level = oapv_clip3(OAPV_MIN_DC_LEVEL_CTX, OAPV_MAX_DC_LEVEL_CTX, core->prev_dc_ctx[c] >> 1);
-    enc_vlc_write(bs, abs_dc_diff, rice_level);
-
-    if(abs_dc_diff)
-        oapv_bsw_write1(bs, sign_dc_diff);
-
-    core->prev_dc_ctx[c] = abs_dc_diff;
-    return OAPV_OK;
-}
-void oapve_vlc_ac_coeff(oapve_ctx_t *ctx, oapve_core_t *core, oapv_bs_t *bs, s16 *coef, int num_sig, int ch_type)
-{
-    ALIGNED_16(s16 coef_temp[64]);
-    u32        num_coeff, scan_pos;
-    u32        sign, level, prev_level, run;
-    const u16 *scanp;
-    s16        coef_cur;
-
-    scanp = oapv_tbl_scan;
-    num_coeff = OAPV_BLK_D;
-    run = 0;
-    int first_ac = 1;
-    prev_level = core->prev_1st_ac_ctx[ch_type];
-    int prev_run = 0;
-    int rice_run = 0;
-    int rice_level = 0;
-    int lb = bs->leftbits;
-    u32 code = bs->code;
-    u8 *cur = bs->cur;
-
-    for(scan_pos = 1; scan_pos < num_coeff; scan_pos++) {
-        coef_temp[scan_pos] = coef[scanp[scan_pos]];
-    }
-
-    const s32 simple_vlc_table[3][2] = { {
-                                             1,
-                                         },
-                                         { 0, 0 },
-                                         { 0, 1 } };
-    for(scan_pos = 1; scan_pos < num_coeff - 1; scan_pos++) {
-        coef_cur = coef_temp[scan_pos];
-        if(coef_cur) {
-            level = oapv_abs16(coef_cur);
-            sign = (coef_cur > 0) ? 0 : 1;
-            rice_run = prev_run >> 2;
-            if(rice_run > 2)
-                rice_run = 2;
-            if(run == 0 && rice_run == 0) {
-                lb--; // bs->leftbits--;
-                code |= (1 << lb);
-                if(lb == 0) {
-                    OAPV_FLUSH_SWAP(cur, code, lb);
-                }
-            }
-            else {
-                int leftbits;
-                leftbits = lb;
-                u32 code_from_lut = CODE_LUT_100[run][rice_run][0];
-                int len_from_lut = CODE_LUT_100[run][rice_run][1];
-                code |= (code_from_lut >> (32 - leftbits));
-                if(len_from_lut < leftbits) {
-                    lb -= len_from_lut;
-                }
-                else {
-                    lb = 0;
-                    OAPV_FLUSH_SWAP(cur, code, lb);
-                    code = (leftbits < 32 ? code_from_lut << leftbits : 0);
-                    lb = 32 - (len_from_lut - leftbits);
-                }
-            }
-            rice_level = prev_level >> 2;
-            if(rice_level > 4)
-                rice_level = OAPV_MAX_AC_LEVEL_CTX;
-            if(level - 1 == 0 && rice_level == 0) {
-                lb--;
-                code |= (1 << lb);
-                if(lb == 0) {
-                    OAPV_FLUSH_SWAP(cur, code, lb);
-                }
-            }
-            else {
-                if(level - 1 > 98) {
-                    {
-                        int k = rice_level;
-                        u32 symbol = level - 1;
-                        u32 simple_vlc_val = oapv_clip3(0, 2, symbol >> k);
-                        int bit_cnt = 0;
-                        if(symbol >= (u32)(1 << k)) {
-                            symbol -= (1 << k);
-                            int val = simple_vlc_table[simple_vlc_val][bit_cnt];
-                            lb--;
-                            code |= ((val & 0x1) << lb);
-                            if(lb == 0) {
-                                OAPV_FLUSH_SWAP(cur, code, lb);
-                            }
-                            bit_cnt++;
-                        }
-                        if(symbol >= (u32)(1 << k) && simple_vlc_val > 0) {
-                            symbol -= (1 << k);
-                            int val = simple_vlc_table[simple_vlc_val][bit_cnt];
-                            lb--;
-                            code |= ((val & 0x1) << lb);
-                            if(lb == 0) {
-                                OAPV_FLUSH_SWAP(cur, code, lb);
-                            }
-                            bit_cnt++;
-                        }
-                        while(symbol >= (u32)(1 << k)) {
-                            symbol -= (1 << k);
-                            lb--;
-                            if(lb == 0) {
-                                OAPV_FLUSH_SWAP(cur, code, lb);
-                            }
-                            if(bit_cnt >= 2) {
-                                k++;
-                            }
-                            bit_cnt++;
-                        }
-                        if(bit_cnt < 2) {
-                            int val = simple_vlc_table[simple_vlc_val][bit_cnt];
-                            lb--;
-                            code |= ((val & 0x1) << lb);
-                            if(lb == 0) {
-                                OAPV_FLUSH_SWAP(cur, code, lb);
-                            }
-                        }
-                        else {
-                            lb--;
-                            code |= ((1 & 0x1) << lb);
-                            if(lb == 0) {
-                                OAPV_FLUSH_SWAP(cur, code, lb);
-                            }
-                        }
-                        if(k > 0) {
-                            int leftbits;
-                            leftbits = lb;
-                            symbol <<= (32 - k);
-                            code |= (symbol >> (32 - leftbits));
-                            if(k < leftbits) {
-                                lb -= k;
-                            }
-                            else {
-                                lb = 0;
-                                OAPV_FLUSH_SWAP(cur, code, lb);
-                                code = (leftbits < 32 ? symbol << leftbits : 0);
-                                lb = 32 - (k - leftbits);
-                            }
-                        }
-                    }
-                }
-                else {
-                    int leftbits;
-                    leftbits = lb;
-                    u32 code_from_lut = CODE_LUT_100[level - 1][rice_level][0];
-                    int len_from_lut = CODE_LUT_100[level - 1][rice_level][1];
-                    code |= (code_from_lut >> (32 - leftbits));
-                    if(len_from_lut < leftbits) {
-                        lb -= len_from_lut;
-                    }
-                    else {
-                        lb = 0;
-                        OAPV_FLUSH_SWAP(cur, code, lb);
-                        code = (leftbits < 32 ? code_from_lut << leftbits : 0);
-                        lb = 32 - (len_from_lut - leftbits);
-                    }
-                }
-            }
-            {
-                lb--;
-                code |= ((sign & 0x1) << lb);
-                if(lb == 0) {
-                    OAPV_FLUSH_SWAP(cur, code, lb);
-                }
-            }
-            if(first_ac) {
-                first_ac = 0;
-                core->prev_1st_ac_ctx[ch_type] = level;
-            }
-            prev_run = run;
-            run = 0;
-            prev_level = level;
-        }
-        else {
-            run++;
-        }
-    }
-    bs->cur = cur;
-    bs->code = code;
-    bs->leftbits = lb;
-    coef_cur = coef_temp[scan_pos];
-    if(coef_cur) {
-        level = oapv_abs16(coef_cur);
-        sign = (coef_cur > 0) ? 0 : 1;
-        /* Run coding */
-        rice_run = prev_run >> 2;
-        if(rice_run > 2)
-            rice_run = 2;
-        if(run == 0 && rice_run == 0) {
-            bs->leftbits--;
-            bs->code |= (1 << bs->leftbits);
-            if(bs->leftbits == 0) {
-                OAPV_FLUSH(bs);
-            }
-        }
-        else {
-            int leftbits;
-            leftbits = bs->leftbits;
-            u32 code_from_lut = CODE_LUT_100[run][rice_run][0];
-            int len_from_lut = CODE_LUT_100[run][rice_run][1];
-            bs->code |= (code_from_lut >> (32 - leftbits));
-            if(len_from_lut < leftbits) {
-                bs->leftbits -= len_from_lut;
-            }
-            else {
-                bs->leftbits = 0;
-                OAPV_FLUSH(bs);
-                bs->code = (leftbits < 32 ? code_from_lut << leftbits : 0);
-                bs->leftbits = 32 - (len_from_lut - leftbits);
-            }
-        }
-        /* Level coding */
-        rice_level = prev_level >> 2;
-        if(rice_level > 4)
-            rice_level = OAPV_MAX_AC_LEVEL_CTX;
-        if(level - 1 == 0 && rice_level == 0) {
-            bs->leftbits--;
-            bs->code |= (1 << bs->leftbits);
-            if(bs->leftbits == 0) {
-                OAPV_FLUSH(bs);
-            }
-        }
-        else {
-            if(level - 1 > 98) {
-                enc_vlc_write(bs, level - 1, rice_level);
-            }
-            else {
-                int leftbits;
-                leftbits = bs->leftbits;
-                u32 code_from_lut = CODE_LUT_100[level - 1][rice_level][0];
-                int len_from_lut = CODE_LUT_100[level - 1][rice_level][1];
-                bs->code |= (code_from_lut >> (32 - leftbits));
-                if(len_from_lut < leftbits) {
-                    bs->leftbits -= len_from_lut;
-                }
-                else {
-                    bs->leftbits = 0;
-                    OAPV_FLUSH(bs);
-                    bs->code = (leftbits < 32 ? code_from_lut << leftbits : 0);
-                    bs->leftbits = 32 - (len_from_lut - leftbits);
-                }
-            }
-        }
-        /* Sign coding */
-        {
-            bs->leftbits--;
-            bs->code |= ((sign & 0x1) << bs->leftbits);
-            if(bs->leftbits == 0) {
-                OAPV_FLUSH(bs);
-            }
-        }
-        if(first_ac) {
-            first_ac = 0;
-            core->prev_1st_ac_ctx[ch_type] = level;
-        }
-    }
-    else {
-        run++;
-    }
-    if(coef_temp[num_coeff - 1] == 0) {
-        int rice_run = 0;
-        rice_run = prev_run >> 2;
-        if(rice_run > 2)
-            rice_run = 2;
-
-        if(run == 0 && rice_run == 0) {
-            bs->leftbits--;
-            bs->code |= (1 << bs->leftbits);
-            if(bs->leftbits == 0) {
-                OAPV_FLUSH(bs);
-            }
-        }
-        else {
-            int leftbits;
-            leftbits = bs->leftbits;
-            u32 code_from_lut = CODE_LUT_100[run][rice_run][0];
-            int len_from_lut = CODE_LUT_100[run][rice_run][1];
-            bs->code |= (code_from_lut >> (32 - leftbits));
-            if(len_from_lut < leftbits) {
-                bs->leftbits -= len_from_lut;
-            }
-            else {
-                bs->leftbits = 0;
-                OAPV_FLUSH(bs);
-                bs->code = (leftbits < 32 ? code_from_lut << leftbits : 0);
-                bs->leftbits = 32 - (len_from_lut - leftbits);
-            }
-        }
-    }
-}
-
-int oapvd_vlc_dc_coeff(oapvd_ctx_t *ctx, oapvd_core_t *core, oapv_bs_t *bs, int *dc_diff, int c)
-{
-    int rice_level = 0;
-    int abs_dc_diff;
-    int sign_dc_diff = 0;
-
-    rice_level = oapv_clip3(OAPV_MIN_DC_LEVEL_CTX, OAPV_MAX_DC_LEVEL_CTX, core->prev_dc_ctx[c] >> 1);
-    abs_dc_diff = dec_vlc_read(bs, rice_level);
-    if(abs_dc_diff)
-        sign_dc_diff = oapv_bsr_read1(bs);
-
-    *dc_diff = sign_dc_diff ? -abs_dc_diff : abs_dc_diff;
-    core->prev_dc_ctx[c] = abs_dc_diff;
-
-    return OAPV_OK;
-}
-
-int oapvd_vlc_ac_coeff(oapvd_ctx_t *ctx, oapvd_core_t *core, oapv_bs_t *bs, s16 *coef, int c)
-{
-    int        sign, level, prev_level, run;
-    int        scan_pos_offset, num_coeff, i;
-    const u16 *scanp;
-
-    scanp = oapv_tbl_scan;
-    num_coeff = OAPV_BLK_D;
-    scan_pos_offset = 1;
-    run = 0;
-
-    int first_ac = 1;
-    prev_level = core->prev_1st_ac_ctx[c];
-    int prev_run = 0;
-
-    do {
-        int rice_run = 0;
-        rice_run = prev_run / 4;
-        if(rice_run > 2)
-            rice_run = 2;
-        if(rice_run == 0) {
-            if(bs->leftbits == 0) {
-                OAPV_READ_FLUSH(bs, 4);
-            }
-            u32 t0 = (u32)(bs->code >> 31);
-            bs->code <<= 1;
-            bs->leftbits -= 1;
-            if(t0)
-                run = 0;
-            else
-                run = dec_vlc_read_1bit_read(bs, rice_run);
-        }
-        else {
-            run = dec_vlc_read(bs, rice_run);
-        }
-
-        oapv_assert_rv((scan_pos_offset + run) <= 64, OAPV_ERR_MALFORMED_BITSTREAM);
-        for (i = scan_pos_offset; i < scan_pos_offset + run; i++){
-            coef[scanp[i]] = 0;
-        }
-
-        if(scan_pos_offset + run == num_coeff) {
-            break;
-        }
-
-        scan_pos_offset += run;
-
-        /* Level parsing */
-        int rice_level = 0;
-        if(scan_pos_offset == 0) {
-            rice_level = oapv_clip3(OAPV_MIN_DC_LEVEL_CTX, OAPV_MAX_DC_LEVEL_CTX, core->prev_dc_ctx[c] >> 1);
-        }
-        else {
-            rice_level = oapv_clip3(OAPV_MIN_AC_LEVEL_CTX, OAPV_MAX_AC_LEVEL_CTX, prev_level >> 2);
-        }
-
-        if(rice_level == 0) {
-            if(bs->leftbits == 0) {
-                OAPV_READ_FLUSH(bs, 4);
-            }
-            u32 t0 = (u32)(bs->code >> 31);
-            bs->code <<= 1;
-            bs->leftbits -= 1;
-            if(t0)
-                level = 0;
-            else
-                level = dec_vlc_read_1bit_read(bs, rice_level);
-        }
-        else {
-            level = dec_vlc_read(bs, rice_level);
-        }
-        level++;
-
-        if(scan_pos_offset != 0) {
-            prev_level = level;
-        }
-        prev_run = run;
-
-        if(scan_pos_offset == 0) {
-            core->prev_dc_ctx[c] = level;
-        }
-        else if(first_ac) {
-            first_ac = 0;
-            core->prev_1st_ac_ctx[c] = level;
-        }
-
-        /* Sign parsing */
-        if(bs->leftbits == 0) {
-            OAPV_READ_FLUSH(bs, 4);
-        }
-        sign = (u32)(bs->code >> 31);
-        bs->code <<= 1;
-        bs->leftbits -= 1;
-        coef[scanp[scan_pos_offset]] = sign ? -(s16)level : (s16)level;
-
-        if(scan_pos_offset >= num_coeff - 1) {
-            break;
-        }
-        scan_pos_offset++;
-    } while(1);
-
-    return OAPV_OK;
-}
-
 int oapvd_vlc_tile_dummy_data(oapv_bs_t *bs)
 {
-    while(bs->cur <= bs->end) {
+    while(bs->cur < bs->end) {
         oapv_bsr_read(bs, 8);
     }
     return OAPV_OK;
@@ -1353,27 +1132,31 @@ int oapvd_vlc_metadata(oapv_bs_t *bs, u32 pbu_size, oapvm_t mid, int group_id)
         oapv_assert_gv(payload_size <= metadata_size, ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
 
         if(payload_size > 0) {
+            oapv_assert_gv(BSR_GET_LEFT_BYTE(bs) >= payload_size, ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
+            payload_data = oapv_bsr_sink(bs);
 
-            payload_data = oapv_malloc(payload_size);
-            oapv_assert_gv(payload_data != NULL, ret, OAPV_ERR_OUT_OF_MEMORY, ERR);
             if(payload_type == OAPV_METADATA_FILLER) {
-                for(u32 i = 0; i < payload_size; i++) {
+                for(int i = 0; i < payload_size; i++) {
                     t0 = oapv_bsr_read(bs, 8);
                     DUMP_HLS(payload_data, t0);
                     oapv_assert_gv(t0 == 0xFF, ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
-                    payload_data[i] = 0xFF;
                 }
             }
             else {
-                for(u32 i = 0; i < payload_size; i++) {
+#if ENC_DEC_DUMP
+                for(int i = 0; i < payload_size; i++) {
                     t0 = oapv_bsr_read(bs, 8);
                     DUMP_HLS(payload_data, t0);
-                    payload_data[i] = t0;
                 }
+#else
+                BSR_MOVE_BYTE_ALIGN(bs, payload_size);
+#endif
             }
         }
-        ret = oapvm_set(mid, group_id, payload_type, payload_data, payload_size,
-                        payload_type == OAPV_METADATA_USER_DEFINED ? payload_data : NULL);
+        else {
+            payload_data = NULL;
+        }
+        ret = oapvm_set(mid, group_id, payload_type, payload_data, payload_size);
         oapv_assert_g(OAPV_SUCCEEDED(ret), ERR);
         metadata_size -= payload_size;
     }
@@ -1383,7 +1166,6 @@ int oapvd_vlc_metadata(oapv_bs_t *bs, u32 pbu_size, oapvm_t mid, int group_id)
     return OAPV_OK;
 
 ERR:
-    // TO-DO: free memory
     return ret;
 }
 

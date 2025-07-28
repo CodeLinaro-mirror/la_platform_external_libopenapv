@@ -36,12 +36,33 @@
 extern "C" {
 #endif
 
-#ifdef OAPV_STATIC_DEFINE
-#define OAPV_EXPORT
+#if defined(ANDROID) || defined(OAPV_STATIC_DEFINE)
+    #define OAPV_EXPORT
 #else
-#include <oapv/oapv_exports.h>
+    #include <oapv/oapv_exports.h>
 #endif
 
+/*****************************************************************************
+ * version and related macro
+ * the version string follows the rule of API_SET.MAJOR.MINOR.PATCH
+ *****************************************************************************/
+#define OAPV_VER_SET(apiset, major, minor, patch) \
+    (((apiset & 0xFF) << 24)|((major & 0xFF) << 16)|((minor & 0xFF) << 8)|\
+    (patch & 0xFF))
+#define OAPV_VER_GET_APISET(v)          (((v) >> 24) & 0xFF)
+#define OAPV_VER_GET_MAJOR(v)           (((v) >> 16) & 0xFF)
+#define OAPV_VER_GET_MINOR(v)           (((v) >>  8) & 0xFF)
+#define OAPV_VER_GET_PATCH(v)           (((v) >>  0) & 0xFF)
+
+/* version numbers (should be changed in case of new release) */
+#define OAPV_VER_APISET                 (0)
+#define OAPV_VER_MAJOR                  (2)
+#define OAPV_VER_MINOR                  (0)
+#define OAPV_VER_PATCH                  (0)
+
+/* 4-bytes version number */
+#define OAPV_VER_NUM \
+    OAPV_VER_SET(OAPV_VER_APISET,OAPV_VER_MAJOR,OAPV_VER_MINOR,OAPV_VER_PATCH)
 
 /* size of macroblock */
 #define OAPV_LOG2_MB                    (4)
@@ -85,8 +106,13 @@ extern "C" {
 #define OAPV_ERR_MALFORMED_BITSTREAM    (-202)
 #define OAPV_ERR_OUT_OF_BS_BUF          (-203) /* too small bitstream buffer */
 #define OAPV_ERR_NOT_FOUND              (-204)
-#define OAPV_ERR_FAILED_SYSCALL         (-301)   /* failed system call */
+#define OAPV_ERR_FAILED_SYSCALL         (-301) /* failed system call */
+#define OAPV_ERR_INVALID_PROFILE        (-400)
 #define OAPV_ERR_INVALID_LEVEL          (-401)
+#define OAPV_ERR_INVALID_WIDTH          (-405) /* invalid width (like odd) */
+#define OAPV_ERR_INVALID_HEIGHT         (-406)
+#define OAPV_ERR_INVALID_QP             (-410)
+#define OAPV_ERR_INVALID_FAMILY         (-501) /* invalid family number */
 #define OAPV_ERR_UNKNOWN                (-32767) /* unknown error */
 
 /* return value checking */
@@ -135,8 +161,9 @@ extern "C" {
 #define OAPV_CS_YCBCR4444_10LE          OAPV_CS_SET(OAPV_CF_YCBCR4444, 10, 0)
 #define OAPV_CS_YCBCR400_12LE           OAPV_CS_SET(OAPV_CF_YCBCR400, 12, 0)
 #define OAPV_CS_YCBCR420_12LE           OAPV_CS_SET(OAPV_CF_YCBCR420, 12, 0)
-#define OAPV_CS_YCBCR400_14LE           OAPV_CS_SET(OAPV_CF_YCBCR400, 14, 0)
-#define OAPV_CS_YCBCR420_14LE           OAPV_CS_SET(OAPV_CF_YCBCR420, 14, 0)
+#define OAPV_CS_YCBCR422_12LE           OAPV_CS_SET(OAPV_CF_YCBCR422, 12, 0)
+#define OAPV_CS_YCBCR444_12LE           OAPV_CS_SET(OAPV_CF_YCBCR444, 12, 0)
+#define OAPV_CS_YCBCR4444_12LE          OAPV_CS_SET(OAPV_CF_YCBCR4444, 12, 0)
 #define OAPV_CS_P210                    OAPV_CS_SET(OAPV_CF_PLANAR2, 10, 0)
 
 /* max number of color channel: ex) YCbCr4444 -> 4 channels */
@@ -152,6 +179,7 @@ extern "C" {
 #define OAPV_CFG_SET_QP_MIN             (208)
 #define OAPV_CFG_SET_QP_MAX             (209)
 #define OAPV_CFG_SET_USE_FRM_HASH       (301)
+#define OAPV_CFG_SET_AU_BS_FMT          (302)
 #define OAPV_CFG_GET_QP_MIN             (600)
 #define OAPV_CFG_GET_QP_MAX             (601)
 #define OAPV_CFG_GET_QP                 (602)
@@ -161,6 +189,15 @@ extern "C" {
 #define OAPV_CFG_GET_FPS_DEN            (606)
 #define OAPV_CFG_GET_WIDTH              (701)
 #define OAPV_CFG_GET_HEIGHT             (702)
+#define OAPV_CFG_GET_AU_BS_FMT          (802)
+
+/*****************************************************************************
+ * config values
+ *****************************************************************************/
+/* The output from the encoder is compliant with raw_bitstream_access_unit */
+#define OAPV_CFG_VAL_AU_BS_FMT_RBAU     (0)
+/* The output from the encoder is the only AU without bitstream format */
+#define OAPV_CFG_VAL_AU_BS_FMT_NONE     (1)
 
 /*****************************************************************************
  * HLS configs
@@ -197,6 +234,20 @@ extern "C" {
  * profiles
  *****************************************************************************/
 #define OAPV_PROFILE_422_10             (33)
+#define OAPV_PROFILE_422_12             (44)
+#define OAPV_PROFILE_444_10             (55)
+#define OAPV_PROFILE_444_12             (66)
+#define OAPV_PROFILE_4444_10            (77)
+#define OAPV_PROFILE_4444_12            (88)
+#define OAPV_PROFILE_400_10             (99)
+
+/*****************************************************************************
+ * family
+ *****************************************************************************/
+#define OAPV_FAMILY_422_LQ              (1)
+#define OAPV_FAMILY_422_SQ              (2)
+#define OAPV_FAMILY_422_HQ              (3)
+#define OAPV_FAMILY_444_HQ              (4)
 
 /*****************************************************************************
  * optimization level control
@@ -279,8 +330,8 @@ struct oapv_imgb {
     /* time-stamps */
     oapv_mtime_t  ts[4];
 
-    int           ndata[4]; /* arbitrary data, if needs */
-    void         *pdata[4]; /* arbitrary adedress if needs */
+    int           ndata[4]; /* arbitrary data, if needed */
+    void         *pdata[4]; /* arbitrary address if needed */
 
     /* aligned width (in unit of pixel) */
     int           aw[OAPV_MAX_CC];
@@ -393,7 +444,13 @@ struct oapv_dict_str_int {
 };
 
 static const oapv_dict_str_int_t oapv_param_opts_profile[] = {
-    {"422-10",  OAPV_PROFILE_422_10},
+    {"422-10", OAPV_PROFILE_422_10},
+    {"422-12", OAPV_PROFILE_422_12},
+    {"444-10", OAPV_PROFILE_444_10},
+    {"444-12", OAPV_PROFILE_444_12},
+    {"4444-10", OAPV_PROFILE_4444_10},
+    {"4444-12", OAPV_PROFILE_4444_12},
+    {"400-10", OAPV_PROFILE_400_10},
     {"", 0} // termination
 };
 
@@ -514,11 +571,9 @@ struct oapve_param {
     /* use quantization matrix */
     int           use_q_matrix;
     unsigned char q_matrix[OAPV_MAX_CC][OAPV_BLK_D]; // raster-scan order
-    /* color space */
-    int           csp;
     /* NOTE: tile_w and tile_h value can be changed internally,
              if the values are not set properly.
-             the min and max values are defeind in APV specification */
+             the min and max values are defined in APV specification */
     int           tile_w; // width of tile MUST be N * MB width
     int           tile_h; // height of tile MUST be N * MB height
 
@@ -532,7 +587,6 @@ struct oapve_param {
     int           full_range_flag;
 };
 
-#define OAPV_CDESC_THREADS_AUTO          0
 /*****************************************************************************
  * automatic assignment of number of threads in creation of encoder & decoder
  *****************************************************************************/
@@ -595,9 +649,9 @@ typedef struct oapvm_payload oapvm_payload_t;
 struct oapvm_payload {
     int           group_id;  // group ID
     int           type;      // payload type
-    unsigned char uuid[16];  // UUID for user-defined metadata payload
+    int           size;      // byte size of metadata payload
     void         *data;      // address of metadata payload
-    int           data_size; // byte size of metadata payload
+    unsigned char uuid[16];  // UUID for user-defined metadata payload
 };
 
 /*****************************************************************************
@@ -605,46 +659,47 @@ struct oapvm_payload {
  *****************************************************************************/
 typedef void       *oapvm_t; // instance identifier for OAPV metadata container
 
-oapvm_t OAPV_EXPORT oapvm_create(int *err);
-void OAPV_EXPORT oapvm_delete(oapvm_t mid);
-void OAPV_EXPORT oapvm_rem_all(oapvm_t mid);
-int OAPV_EXPORT oapvm_set(oapvm_t mid, int group_id, int type, void *data, int size, unsigned char *uuid);
-int OAPV_EXPORT oapvm_get(oapvm_t mid, int group_id, int type, void **data, int *size, unsigned char *uuid);
-int OAPV_EXPORT oapvm_rem(oapvm_t mid, int group_id, int type, unsigned char *uuid);
-int OAPV_EXPORT oapvm_set_all(oapvm_t mid, oapvm_payload_t *pld, int num_plds);
-int OAPV_EXPORT oapvm_get_all(oapvm_t mid, oapvm_payload_t *pld, int *num_plds);
+OAPV_EXPORT oapvm_t oapvm_create(int *err);
+OAPV_EXPORT void oapvm_delete(oapvm_t mid);
+OAPV_EXPORT int oapvm_set(oapvm_t mid, int group_id, int type, void *data, int size);
+OAPV_EXPORT int oapvm_get(oapvm_t mid, int group_id, int type, void **data, int *size, unsigned char *uuid);
+OAPV_EXPORT int oapvm_rem(oapvm_t mid, int group_id, int type, unsigned char *uuid);
+OAPV_EXPORT int oapvm_set_all(oapvm_t mid, oapvm_payload_t *pld, int num_plds);
+OAPV_EXPORT int oapvm_get_all(oapvm_t mid, oapvm_payload_t *pld, int *num_plds);
+OAPV_EXPORT void oapvm_rem_all(oapvm_t mid);
 
 /*****************************************************************************
  * interface for encoder
  *****************************************************************************/
 typedef void       *oapve_t; /* instance identifier for OAPV encoder */
 
-oapve_t OAPV_EXPORT oapve_create(oapve_cdesc_t *cdesc, int *err);
-void OAPV_EXPORT oapve_delete(oapve_t eid);
-int OAPV_EXPORT oapve_config(oapve_t eid, int cfg, void *buf, int *size);
-int OAPV_EXPORT oapve_param_default(oapve_param_t *param);
-int OAPV_EXPORT oapve_param_parse(oapve_param_t* param, const char* name,  const char* value);
-int OAPV_EXPORT oapve_encode(oapve_t eid, oapv_frms_t *ifrms, oapvm_t mid, oapv_bitb_t *bitb, oapve_stat_t *stat, oapv_frms_t *rfrms);
+OAPV_EXPORT oapve_t oapve_create(oapve_cdesc_t *cdesc, int *err);
+OAPV_EXPORT void oapve_delete(oapve_t eid);
+OAPV_EXPORT int oapve_config(oapve_t eid, int cfg, void *buf, int *size);
+OAPV_EXPORT int oapve_param_default(oapve_param_t *param);
+OAPV_EXPORT int oapve_param_parse(oapve_param_t* param, const char* name,  const char* value);
+OAPV_EXPORT int oapve_encode(oapve_t eid, oapv_frms_t *ifrms, oapvm_t mid, oapv_bitb_t *bitb, oapve_stat_t *stat, oapv_frms_t *rfrms);
 
 /*****************************************************************************
  * interface for decoder
  *****************************************************************************/
 typedef void       *oapvd_t; /* instance identifier for OAPV decoder */
 
-oapvd_t OAPV_EXPORT oapvd_create(oapvd_cdesc_t *cdesc, int *err);
-void OAPV_EXPORT oapvd_delete(oapvd_t did);
-int OAPV_EXPORT oapvd_config(oapvd_t did, int cfg, void *buf, int *size);
-int OAPV_EXPORT oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid, oapvd_stat_t *stat);
+OAPV_EXPORT oapvd_t oapvd_create(oapvd_cdesc_t *cdesc, int *err);
+OAPV_EXPORT void oapvd_delete(oapvd_t did);
+OAPV_EXPORT int oapvd_config(oapvd_t did, int cfg, void *buf, int *size);
+OAPV_EXPORT int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid, oapvd_stat_t *stat);
 
 /*****************************************************************************
  * interface for utility
  *****************************************************************************/
-int OAPV_EXPORT oapvd_info(void *au, int au_size, oapv_au_info_t *aui);
+OAPV_EXPORT int oapvd_info(void *au, int au_size, oapv_au_info_t *aui);
+OAPV_EXPORT int oapve_family_bitrate(int family, int w, int h, int fps_num, int fps_den, int * kbps);
 
 /*****************************************************************************
  * openapv version
  *****************************************************************************/
-char * OAPV_EXPORT oapv_version();
+OAPV_EXPORT const char *oapv_version(unsigned int *ver_num);
 
 #ifdef __cplusplus
 } /* extern "C" */
