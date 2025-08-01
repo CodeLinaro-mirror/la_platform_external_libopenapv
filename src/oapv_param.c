@@ -62,7 +62,6 @@ int oapve_param_default(oapve_param_t *param)
     param->transfer_characteristics = 2; // unspecified transfer characteristics
     param->matrix_coefficients = 2; // unspecified matrix coefficients
     param->full_range_flag = 0; // limited range
-
     return OAPV_OK;
 }
 
@@ -131,21 +130,21 @@ static int get_q_matrix(const char *str, u8 q_matrix[OAPV_BLK_D])
 }
 
 #define NAME_CMP(VAL)      else if(strcmp(name, VAL)== 0)
-#define GET_INTEGER_OR_ERR(STR, F) { \
+#define GET_INTEGER_OR_ERR(STR, F, ERR) { \
     char * left; (F) = strtol(STR, &left, 10); \
-    if(strlen(left)>0) return OAPV_ERR_INVALID_ARGUMENT; \
+    if(strlen(left)>0) return (ERR); \
 }
-#define GET_INTEGER_MIN_OR_ERR(STR, F, MIN) { \
-        GET_INTEGER_OR_ERR(STR, F); \
-        if((F) < (MIN)) return OAPV_ERR_INVALID_ARGUMENT; \
+#define GET_INTEGER_MIN_OR_ERR(STR, F, MIN, ERR) { \
+        GET_INTEGER_OR_ERR(STR, F, ERR); \
+        if((F) < (MIN)) return (ERR); \
 }
-#define GET_INTEGER_MIN_MAX_OR_ERR(STR, F, MIN, MAX) { \
-    GET_INTEGER_OR_ERR(STR, F); \
-    if((F) < (MIN) || (F) > (MAX)) return OAPV_ERR_INVALID_ARGUMENT; \
+#define GET_INTEGER_MIN_MAX_OR_ERR(STR, F, MIN, MAX, ERR) { \
+    GET_INTEGER_OR_ERR(STR, F, ERR); \
+    if((F) < (MIN) || (F) > (MAX)) return (ERR); \
 }
-#define GET_FLOAT_OR_ERR(STR, F) { \
+#define GET_FLOAT_OR_ERR(STR, F, ERR) { \
     char * left; (F) = strtof(STR, &left); \
-    if(strlen(left)>0) return OAPV_ERR_INVALID_ARGUMENT; \
+    if(strlen(left)>0) return (ERR); \
 }
 
 int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value)
@@ -180,7 +179,7 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
             param->level_idc = OAPVE_PARAM_LEVEL_IDC_AUTO;
         }
         else {
-            GET_FLOAT_OR_ERR(value, tf0);
+            GET_FLOAT_OR_ERR(value, tf0, OAPV_ERR_INVALID_ARGUMENT);
             // validation check
             // level == [1, 1.1, 2, 2.1, 3, 3.1, 4, 4.1, 5, 5.1, 6, 6.1, 7, 7.1]
             if(tf0 == 1.0f || tf0 == 1.1f || tf0 == 2.0f || tf0 == 2.1f || \
@@ -195,7 +194,7 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
         }
     }
     NAME_CMP("band") {
-        GET_INTEGER_MIN_MAX_OR_ERR(value, ti0, 0, 3);
+        GET_INTEGER_MIN_MAX_OR_ERR(value, ti0, 0, 3, OAPV_ERR_INVALID_ARGUMENT);
         param->band_idc = ti0;
     }
     NAME_CMP("preset") {
@@ -205,13 +204,13 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
         param->preset = ti0;
     }
     NAME_CMP("width") {
-        GET_INTEGER_OR_ERR(value, ti0);
-        oapv_assert_rv(ti0 > 0, OAPV_ERR_INVALID_ARGUMENT);
+        GET_INTEGER_OR_ERR(value, ti0, OAPV_ERR_INVALID_WIDTH);
+        oapv_assert_rv(ti0 > 0, OAPV_ERR_INVALID_WIDTH);
         param->w = ti0;
     }
     NAME_CMP("height") {
-        GET_INTEGER_OR_ERR(value, ti0);
-        oapv_assert_rv(ti0 > 0, OAPV_ERR_INVALID_ARGUMENT);
+        GET_INTEGER_OR_ERR(value, ti0, OAPV_ERR_INVALID_HEIGHT);
+        oapv_assert_rv(ti0 > 0, OAPV_ERR_INVALID_HEIGHT);
         param->h = ti0;
     }
     NAME_CMP("fps") {
@@ -219,12 +218,12 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
             sscanf(value, "%d/%d", &param->fps_num, &param->fps_den);
         }
         else if(strpbrk(value, ".") != NULL) {
-            GET_FLOAT_OR_ERR(value, tf0);
+            GET_FLOAT_OR_ERR(value, tf0, OAPV_ERR_INVALID_ARGUMENT);
             param->fps_num = tf0 * 10000;
             param->fps_den = 10000;
         }
         else {
-            GET_INTEGER_OR_ERR(value, ti0);
+            GET_INTEGER_OR_ERR(value, ti0, OAPV_ERR_INVALID_ARGUMENT);
             param->fps_num = ti0;
             param->fps_den = 1;
         }
@@ -239,21 +238,21 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
             //     - 10bit input: 0 ~ 63"
             //     - 12bit input: 0 ~ 75"
             // max value cannot be decided without bitdepth value
-            GET_INTEGER_MIN_MAX_OR_ERR(value, ti0, MIN_QUANT, MAX_QUANT(12));
+            GET_INTEGER_MIN_MAX_OR_ERR(value, ti0, MIN_QUANT, MAX_QUANT(12), OAPV_ERR_INVALID_QP);
             param->qp = ti0;
             param->rc_type = OAPV_RC_CQP;
         }
     }
     NAME_CMP("qp-offset-c1") {
-        GET_INTEGER_OR_ERR(value, ti0);
+        GET_INTEGER_OR_ERR(value, ti0, OAPV_ERR_INVALID_QP);
         param->qp_offset_c1 = ti0;
     }
     NAME_CMP("qp-offset-c2") {
-        GET_INTEGER_OR_ERR(value, ti0);
+        GET_INTEGER_OR_ERR(value, ti0, OAPV_ERR_INVALID_QP);
         param->qp_offset_c2 = ti0;
     }
     NAME_CMP("qp-offset-c3") {
-        GET_INTEGER_OR_ERR(value, ti0);
+        GET_INTEGER_OR_ERR(value, ti0, OAPV_ERR_INVALID_QP);
         param->qp_offset_c3 = ti0;
     }
     NAME_CMP("bitrate") {
@@ -298,12 +297,12 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
         param->use_q_matrix = 1;
     }
     NAME_CMP("tile-w") {
-        GET_INTEGER_MIN_OR_ERR(value, ti0, OAPV_MIN_TILE_W);
+        GET_INTEGER_MIN_OR_ERR(value, ti0, OAPV_MIN_TILE_W, OAPV_ERR_INVALID_ARGUMENT);
         oapv_assert_rv((ti0 & (OAPV_MB_W - 1)) == 0, OAPV_ERR_INVALID_ARGUMENT);
         param->tile_w = ti0;
     }
     NAME_CMP("tile-h") {
-        GET_INTEGER_MIN_OR_ERR(value, ti0, OAPV_MIN_TILE_H);
+        GET_INTEGER_MIN_OR_ERR(value, ti0, OAPV_MIN_TILE_H, OAPV_ERR_INVALID_ARGUMENT);
         oapv_assert_rv((ti0 & (OAPV_MB_W - 1)) == 0, OAPV_ERR_INVALID_ARGUMENT);
         param->tile_h = ti0;
     }
@@ -338,7 +337,6 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
     else {
         return OAPV_ERR_INVALID_ARGUMENT;
     }
-
     return OAPV_OK;
 }
 
@@ -361,20 +359,20 @@ static int level_idc_to_level_idx(int level_idc)
 }
 
 static int max_coded_data_rate[MAX_LEVEL_NUM][MAX_BAND_NUM] = {
-    {     7000,    11000,     14000,     21000 },
-    {    14000,    21000,     28000,     42000 },
-    {    36000,    53000,     71000,    106000 },
-    {    71000,   106000,    141000,    212000 },
-    {   101000,   151000,    201000,    301000 },
-    {   201000,   301000,    401000,    602000 },
-    {   401000,   602000,    780000,   1170000 },
-    {   780000,  1170000,   1560000,   2340000 },
-    {  1560000,  2340000,   3324000,   4986000 },
-    {  3324000,  4986000,   6648000,   9972000 },
-    {  6648000,  9972000,  13296000,  19944000 },
-    { 13296000, 19944000,  26592000,  39888000 },
-    { 26592000, 39888000,  53184000,  79776000 },
-    { 53184000, 79776000, 106368000, 159552000 }
+    {     8000,    11000,     15000,     23000 },
+    {    16000,    21000,     30000,     45000 },
+    {    39000,    54000,     76000,    114000 },
+    {    78000,   108000,    152000,    227000 },
+    {   114000,   159000,    222000,    333000 },
+    {   227000,   317000,    444000,    666000 },
+    {   455000,   637000,    892000,   1338000 },
+    {   910000,  1274000,   1784000,   2675000 },
+    {  1820000,  2548000,   3567000,   5350000 },
+    {  3639000,  5095000,   7133000,  10699000 },
+    {  7278000, 10189000,  14265000,  21397000 },
+    { 14556000, 20378000,  28529000,  42793000 },
+    { 29111000, 40756000,  57058000,  85586000 },
+    { 58222000, 81511000, 114115000, 171172000 }
 };
 
 static u64 max_luma_sample_rate[MAX_LEVEL_NUM] = {
@@ -498,3 +496,69 @@ int oapve_param_update(oapve_ctx_t* ctx)
 
     return ret;
 }
+
+/* APV family series information */
+static int family_info[][2] = {
+    {      (0 * 0),  38}, // minimum value undefined in family spec
+    {  (960 * 540),  72}, // qHD
+    { (1280 * 720),  98}, // 720p
+    {(1920 * 1080), 198}, // FHD
+    {(2048 * 1080), 211}, // 2K
+    {(3840 * 2160), 796}, // UHD 4K
+};
+
+#define NUM_FAMILY_INFO ((int)(sizeof(family_info) / sizeof(family_info[0])))
+
+static float get_key_bitrate(int w, int h)
+{
+    int idx, wh_hi, wh_lo, bit_hi, bit_lo;
+    int wh = w * h;
+    float key = 0.f;
+
+    for(idx = 0; idx < NUM_FAMILY_INFO; idx++) {
+        if(wh < family_info[idx][0]) {
+            wh_hi  = family_info[idx][0]; // resolution of high-bound
+            bit_hi = family_info[idx][1]; // Mbps for high-bound
+            wh_lo  = family_info[idx-1][0]; // resolution of low-bound
+            bit_lo = family_info[idx-1][1]; // Mbps of low-bound
+
+            float ratio = (float)(bit_hi - bit_lo) / (wh_hi - wh_lo);
+            key   = bit_lo + (ratio * (wh - wh_lo));
+            break;
+        }
+    }
+    if(idx == NUM_FAMILY_INFO) {
+        // needs to linear interpolation from the last element of the family table.
+        int fidx = NUM_FAMILY_INFO - 1;
+        wh_hi  = family_info[fidx][0];
+        bit_hi = family_info[fidx][1];
+        key    = bit_hi * ((float)wh / wh_hi);
+    }
+    return key;
+}
+
+int oapve_family_bitrate(int family, int w, int h, int fps_num, int fps_den, int * kbps)
+{
+    float key, ratio;
+
+    switch(family) {
+    case OAPV_FAMILY_422_LQ:
+        ratio = 1.f / (1.4f * 1.4f);
+        break;
+    case OAPV_FAMILY_422_SQ:
+        ratio = 1.f / 1.4f;
+        break;
+    case OAPV_FAMILY_422_HQ:
+        ratio = 1.f;
+        break;
+    case OAPV_FAMILY_444_HQ:
+        ratio = 1.5f;
+        break;
+    default: // invalid family
+        return OAPV_ERR_INVALID_FAMILY; // unknown family
+    }
+    key = get_key_bitrate(w, h);
+    *kbps = (int)(key * ratio * ((float)fps_num/fps_den)/30.f * 1000.f); // unit: kbps
+    return OAPV_OK;
+}
+

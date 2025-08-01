@@ -1,8 +1,10 @@
 #pragma pattern for Advanced Professional Video (*.apv)
 
+#pragma magic [ 61 50 76 31 ] @ 0x04
+#pragma endian big
+
 import std.io;
 import std.mem;
-#pragma endian big
 
 /* PBU types */
 enum PbuType : u8 {
@@ -66,7 +68,7 @@ struct PbuBase {
     }
     */
 
-    u32 pbu_size; // originally, this syntax is part of AuccessUnit
+    u32 pbu_size; // originally, this syntax is part of AccessUnit
     u8 pbu_type;
     u16 group_id;
     u8 reserved_zero_8bits;
