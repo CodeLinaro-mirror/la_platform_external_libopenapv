@@ -117,7 +117,7 @@ static const args_opt_t enc_args_opts[] = {
         "      - 422-LQ: YCbCr422 low quality\n"
         "      - 422-SQ: YCbCr422 standard quality\n"
         "      - 422-HQ: YCbCr422 high quality\n"
-        "      - 444-HQ: YCbCr444 high quality\n"
+        "      - 444-UQ: YCbCr444 ultra quality\n"
         "      Note: 'family' and 'bitrate' value cannot be set together.\n"
         "            The family and profile arguments should be set with the same\n"
         "            color space, if they coexists."
@@ -144,7 +144,8 @@ static const args_opt_t enc_args_opts[] = {
     },
     {
         ARGS_NO_KEY,  "band", ARGS_VAL_TYPE_STRING, 0, NULL,
-        "band setting (0, 1, 2, 3)"
+        "band setting (0, 1, 2, 3)\n"
+        "      - 'auto' means that the value is internally determined"
     },
     {
         ARGS_NO_KEY,  "max-au", ARGS_VAL_TYPE_INTEGER, 0, NULL,
@@ -281,7 +282,7 @@ static args_var_t *args_init_vars(args_parser_t *args, oapve_param_t *param)
     args_set_variable_by_key_long(opts, "level", vars->level);
     strcpy(vars->level, "auto"); /* default */
     args_set_variable_by_key_long(opts, "band", vars->band);
-    strcpy(vars->band, "2"); /* default */
+    strcpy(vars->band, "auto"); /* default */
 
     args_set_variable_by_key_long(opts, "width", vars->width);
     args_set_variable_by_key_long(opts, "height", vars->height);
@@ -360,7 +361,7 @@ static const oapv_dict_str_int_t opts_family[] = {
     {"422-LQ",    OAPV_FAMILY_422_LQ},
     {"422-SQ",    OAPV_FAMILY_422_SQ},
     {"422-HQ",    OAPV_FAMILY_422_HQ},
-    {"444-HQ",    OAPV_FAMILY_444_HQ},
+    {"444-UQ",    OAPV_FAMILY_444_UQ},
     {"", 0} // termination
 };
 
@@ -399,7 +400,7 @@ static int check_conf(oapve_cdesc_t *cdesc, args_var_t *vars)
                 return -1;
             }
             break;
-        case OAPV_FAMILY_444_HQ:
+        case OAPV_FAMILY_444_UQ:
             if(p != OAPV_PROFILE_444_10) {
                 logerr("ERR: 'family(%s)' and 'profile(%s)' value are unmatched.\n", vars->family, vars->profile);
                 return -1;
