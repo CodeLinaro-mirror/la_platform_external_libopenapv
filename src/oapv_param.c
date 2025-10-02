@@ -47,7 +47,7 @@ int oapve_param_default(oapve_param_t *param)
 
     param->profile_idc = OAPV_PROFILE_422_10;
     param->level_idc = OAPVE_PARAM_LEVEL_IDC_AUTO;
-    param->band_idc = 2;
+    param->band_idc  = OAPVE_PARAM_BAND_IDC_AUTO;
 
     param->use_q_matrix = 0;
 
@@ -194,8 +194,13 @@ int oapve_param_parse(oapve_param_t *param, const char *name,  const char *value
         }
     }
     NAME_CMP("band") {
-        GET_INTEGER_MIN_MAX_OR_ERR(value, ti0, 0, 3, OAPV_ERR_INVALID_ARGUMENT);
-        param->band_idc = ti0;
+        if (!strcmp(value, "auto")) {
+            param->band_idc = OAPVE_PARAM_BAND_IDC_AUTO;
+        }
+        else {
+            GET_INTEGER_MIN_MAX_OR_ERR(value, ti0, 0, 3, OAPV_ERR_INVALID_ARGUMENT);
+            param->band_idc = ti0;
+        }
     }
     NAME_CMP("preset") {
         if(get_ival_from_skey(oapv_param_opts_preset, value, &ti0)) {
@@ -382,7 +387,7 @@ static u64 max_luma_sample_rate[MAX_LEVEL_NUM] = {
     16986931200, 33973862400
 };
 
-static int enc_update_param_level(oapve_param_t* param)
+static int enc_update_param_level_band(oapve_param_t* param)
 {
     int w = oapv_div_round_up(param->w, OAPV_MB_W) * OAPV_MB_W;
     int h = oapv_div_round_up(param->h, OAPV_MB_H) * OAPV_MB_H;
@@ -397,13 +402,34 @@ static int enc_update_param_level(oapve_param_t* param)
     }
 
     if (param->bitrate > 0) {
-        for (int i = min_level_idx; i < MAX_LEVEL_NUM; i++) {
-            if (param->bitrate <= max_coded_data_rate[i][param->band_idc]) {
-                min_level_idx = i;
-                break;
+        if (param->band_idc == OAPVE_PARAM_BAND_IDC_AUTO) {
+            int is_found = 0;
+            for (int i = min_level_idx; i < MAX_LEVEL_NUM; i++) {
+                for (int j = 0; j < MAX_BAND_NUM; j++) {
+                    if (param->bitrate <= max_coded_data_rate[i][j]) {
+                        min_level_idx = i;
+                        param->band_idc = j;
+                        is_found = 1;
+                        break;
+                    }
+                }
+                if (is_found) {
+                    break;
+                }
             }
-
+            oapv_assert_rv(is_found == 1, OAPV_ERR);
         }
+        else {
+            for (int i = min_level_idx; i < MAX_LEVEL_NUM; i++) {
+                if (param->bitrate <= max_coded_data_rate[i][param->band_idc]) {
+                    min_level_idx = i;
+                    break;
+                }
+            }
+        }
+    }
+    else if (param->band_idc == OAPVE_PARAM_BAND_IDC_AUTO) {
+        param->band_idc = 2;
     }
 
     int min_level_idc = OAPV_LEVEL_TO_LEVEL_IDC(level_avail[min_level_idx]);
@@ -479,7 +505,7 @@ int oapve_param_update(oapve_ctx_t* ctx)
         int num_tiles = oapv_div_round_up(ctx->w, ctx->cdesc.param[i].tile_w) * oapv_div_round_up(ctx->h, ctx->cdesc.param[i].tile_h);
         min_num_tiles = oapv_min(min_num_tiles, num_tiles);
 
-        ret = enc_update_param_level(&ctx->cdesc.param[i]);
+        ret = enc_update_param_level_band(&ctx->cdesc.param[i]);
         oapv_assert_rv(ret == OAPV_OK, ret);
 
         ret = enc_update_param_bitrate(&ctx->cdesc.param[i]);
@@ -551,7 +577,7 @@ int oapve_family_bitrate(int family, int w, int h, int fps_num, int fps_den, int
     case OAPV_FAMILY_422_HQ:
         ratio = 1.f;
         break;
-    case OAPV_FAMILY_444_HQ:
+    case OAPV_FAMILY_444_UQ:
         ratio = 1.5f;
         break;
     default: // invalid family
