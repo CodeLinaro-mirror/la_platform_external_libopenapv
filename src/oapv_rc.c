@@ -182,21 +182,26 @@ void oapve_rc_get_qp(oapve_ctx_t* ctx, oapve_tile_t* tile, int frame_qp, int* qp
 
 void oapve_rc_update_after_pic(oapve_ctx_t* ctx, double cost)
 {
-    int num_pixel = ctx->w * ctx->h;
-    for (int c = 1; c < ctx->num_comp; c++) {
-        num_pixel += (ctx->w * ctx->h) >> (ctx->comp_sft[c][0] + ctx->comp_sft[c][1]);
+    if (cost > 0) {
+        int num_pixel = ctx->w * ctx->h;
+        for (int c = 1; c < ctx->num_comp; c++) {
+            num_pixel += (ctx->w * ctx->h) >> (ctx->comp_sft[c][0] + ctx->comp_sft[c][1]);
+        }
+
+        int total_bits = 0;
+        for (int i = 0; i < ctx->num_tiles; i++) {
+            total_bits += ctx->fh.tile_size[i] * 8;
+        }
+
+        double ln_bpp = log(pow(cost / (double)num_pixel, OAPV_RC_BETA));
+        double diff_lambda = (ctx->rc_param.beta) * (log((double)total_bits) - log(((double)ctx->param->bitrate * 1000 / ((double)ctx->param->fps_num / ctx->param->fps_den))));
+
+        diff_lambda = oapv_clip3(-0.125, 0.125, 0.25 * diff_lambda);
+        ctx->rc_param.alpha = (ctx->rc_param.alpha) * exp(diff_lambda);
+        ctx->rc_param.beta = (ctx->rc_param.beta) + diff_lambda / ln_bpp;
+
+        ctx->rc_param.alpha = oapv_clip3(0.05, 500, ctx->rc_param.alpha);
+        ctx->rc_param.beta = oapv_clip3(0.1, 3, ctx->rc_param.beta);
     }
-
-    int total_bits = 0;
-    for (int i = 0; i < ctx->num_tiles; i++) {
-        total_bits += ctx->fh.tile_size[i] * 8;
-    }
-
-    double ln_bpp = log(pow(cost / (double)num_pixel, OAPV_RC_BETA));
-    double diff_lambda = (ctx->rc_param.beta) * (log((double)total_bits) - log(((double)ctx->param->bitrate * 1000 / ((double)ctx->param->fps_num / ctx->param->fps_den))));
-
-    diff_lambda = oapv_clip3(-0.125, 0.125, 0.25 * diff_lambda);
-    ctx->rc_param.alpha = (ctx->rc_param.alpha) * exp(diff_lambda);
-    ctx->rc_param.beta = (ctx->rc_param.beta) + diff_lambda / ln_bpp;
     ctx->rc_param.is_updated = 1;
 }
