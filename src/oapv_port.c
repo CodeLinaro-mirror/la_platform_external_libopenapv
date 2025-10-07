@@ -120,4 +120,3 @@ int oapv_get_num_cpu_cores(void)
 #endif
     return num_cores;
 }
-

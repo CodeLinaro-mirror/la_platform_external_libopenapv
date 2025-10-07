@@ -45,6 +45,11 @@ static int y4m_test(FILE *fp)
 
     char buffer[9] = { 0 };
 
+    if (ftell(fp) < 0) {
+        /* Not seekable, so probably a pipe: assume not-y4m. */
+        return 0;
+    }
+
     /*Peek to check if y4m header is present*/
     if(!fread(buffer, 1, 8, fp))
         return -1;
@@ -61,23 +66,19 @@ static int y4m_parse_tags(y4m_params_t *y4m, char *tags)
 
     char *p;
     char *q;
-    char  t_buff[20];
+    char  colorspace[20];
     int   found_w = 0, found_h = 0, found_cf = 0;
     int   fps_n, fps_d, pix_ratio_n, pix_ratio_d;
 
     for(p = tags;; p = q) {
-
         /*Skip any leading spaces.*/
-        while(*p == ' ')
-            p++;
+        while(*p == ' ')  p++;
 
         /*If that's all we have, stop.*/
-        if(p[0] == '\0')
-            break;
+        if(p[0] == '\0')  break;
 
         /*Find the end of this tag.*/
-        for(q = p + 1; *q != '\0' && *q != ' '; q++) {
-        }
+        for(q = p + 1; *q != '\0' && *q != ' '; q++) { }
 
         /*Process the tag.*/
         switch(p[0]) {
@@ -112,8 +113,8 @@ static int y4m_parse_tags(y4m_params_t *y4m, char *tags)
         case 'C': {
             if(q - p > 16)
                 return OAPV_ERR;
-            memcpy(t_buff, p + 1, q - p - 1);
-            t_buff[q - p - 1] = '\0';
+            memcpy(colorspace, p + 1, q - p - 1);
+            colorspace[q - p - 1] = '\0';
             found_cf = 1;
             break;
         }
@@ -122,43 +123,55 @@ static int y4m_parse_tags(y4m_params_t *y4m, char *tags)
     }
 
     if(!(found_w == 1 && found_h == 1)) {
-        logerr("Mandatory arugments are not found in y4m header");
+        logerr("Mandatory width and height values were not found in y4m header");
         return OAPV_ERR;
     }
-    /* Setting default colorspace to yuv420 and input_bd to 8 if header info. is NA */
+
     if(!found_cf) {
         y4m->color_format = OAPV_CF_YCBCR420;
         y4m->bit_depth = 8;
     }
 
-    if(strcmp(t_buff, "420jpeg") == 0 || strcmp(t_buff, "420") == 0 ||
-       strcmp(t_buff, "420mpeg2") == 0 || strcmp(t_buff, "420paidv") == 0) {
+    if(strcmp(colorspace, "420jpeg") == 0 || strcmp(colorspace, "420") == 0 ||
+       strcmp(colorspace, "420mpeg2") == 0 || strcmp(colorspace, "420paidv") == 0) {
         y4m->color_format = OAPV_CF_YCBCR420;
         y4m->bit_depth = 8;
     }
-    else if(strcmp(t_buff, "422") == 0) {
+    else if(strcmp(colorspace, "422") == 0) {
         y4m->color_format = OAPV_CF_YCBCR422;
         y4m->bit_depth = 8;
     }
-    else if(strcmp(t_buff, "444") == 0) {
+    else if(strcmp(colorspace, "444") == 0) {
         y4m->color_format = OAPV_CF_YCBCR444;
         y4m->bit_depth = 8;
     }
-    else if(strcmp(t_buff, "420p10") == 0) {
+    else if(strcmp(colorspace, "420p10") == 0) {
         y4m->color_format = OAPV_CF_YCBCR420;
         y4m->bit_depth = 10;
     }
-    else if(strcmp(t_buff, "422p10") == 0) {
+    else if(strcmp(colorspace, "422p10") == 0) {
         y4m->color_format = OAPV_CF_YCBCR422;
         y4m->bit_depth = 10;
     }
-    else if(strcmp(t_buff, "444p10") == 0) {
+    else if(strcmp(colorspace, "422p12") == 0) {
+        y4m->color_format = OAPV_CF_YCBCR422;
+        y4m->bit_depth = 12;
+    }
+    else if(strcmp(colorspace, "444p10") == 0) {
         y4m->color_format = OAPV_CF_YCBCR444;
         y4m->bit_depth = 10;
     }
-    else if(strcmp(t_buff, "mono") == 0) {
+    else if(strcmp(colorspace, "444p12") == 0) {
+        y4m->color_format = OAPV_CF_YCBCR444;
+        y4m->bit_depth = 12;
+    }
+    else if(strcmp(colorspace, "mono") == 0) {
         y4m->color_format = OAPV_CF_YCBCR400;
         y4m->bit_depth = 8;
+    }
+    else if(strcmp(colorspace, "mono10") == 0) {
+        y4m->color_format = OAPV_CF_YCBCR400;
+        y4m->bit_depth = 10;
     }
     else {
         y4m->color_format = OAPV_CF_UNKNOWN;
@@ -240,20 +253,26 @@ static int write_y4m_header(char *fname, oapv_imgb_t *imgb)
             strcpy(c_buf, "422");
         else if(bit_depth == 10)
             strcpy(c_buf, "422p10");
+        else if(bit_depth == 12)
+            strcpy(c_buf, "422p12");
     }
     else if(color_format == OAPV_CF_YCBCR444) {
         if(bit_depth == 8)
             strcpy(c_buf, "444");
         else if(bit_depth == 10)
             strcpy(c_buf, "444p10");
+        else if(bit_depth == 12)
+            strcpy(c_buf, "444p12");
     }
     else if(color_format == OAPV_CF_YCBCR400) {
         if(bit_depth == 8)
             strcpy(c_buf, "mono");
+        else if(bit_depth == 10)
+            strcpy(c_buf, "mono10");
     }
 
     if(strlen(c_buf) == 0) {
-        logerr("Color format is not suuported by y4m");
+        logerr("Color format is not supported by y4m\n");
         return -1;
     }
 
@@ -294,7 +313,7 @@ static int write_y4m_frame_header(char *fname)
 // return
 // - positive value : file name has y4m format name
 // - zero : YUV format name
-// - nogative value : unknown format name
+// - negative value : unknown format name
 static int check_file_name_type(char * fname)
 {
     char  fext[16];
