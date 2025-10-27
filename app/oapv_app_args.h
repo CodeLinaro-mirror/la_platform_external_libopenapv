@@ -57,7 +57,7 @@ typedef struct args_opt {
     int   val_type;                    /* value type */
     int   flag;                        /* flag to setting or not */
     void *val;                         /* actual value */
-    char  desc[512];                   /* description of option */
+    char  desc[1024];                   /* description of option */
 } args_opt_t;
 
 typedef struct args_parser args_parser_t;
