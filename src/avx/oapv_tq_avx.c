@@ -32,6 +32,7 @@
 #include "oapv_def.h"
 #include "oapv_tq_avx.h"
 
+#if X86_SSE
 #ifndef _mm256_set_m128i
 #define _mm256_set_m128i(/* __m128i */ hi, /* __m128i */ lo) \
     _mm256_insertf128_si256(_mm256_castsi128_si256(lo), (hi), 0x1)
@@ -561,3 +562,4 @@ const oapv_fn_itx_adj_t oapv_tbl_fn_itx_adj_avx[2] =
     oapv_adjust_itrans_avx,
         NULL,
 };
+#endif /* X86_SSE */

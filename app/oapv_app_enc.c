@@ -198,6 +198,80 @@ static const args_opt_t enc_args_opts[] = {
         "custom quantization matrix for component 3 \"q1 q2 ... q63 q64\""
     },
     {
+        ARGS_NO_KEY,  "color-primaries", ARGS_VAL_TYPE_INTEGER, 0, NULL,
+        "ColourPrimaries value defined in ITU-T H.273\n"
+        "      - 1: bt709\n"
+        "      - 2: unspecified\n"
+        "      - 3: reserved\n"
+        "      - 4: bt470m\n"
+        "      - 5: bt470bg\n"
+        "      - 6: smpte170m\n"
+        "      - 7: smpte240m\n"
+        "      - 8: film\n"
+        "      - 9: bt2020\n"
+        "      - 10: smpte4280\n"
+        "      - 11: smpte4311\n"
+        "      - 12: smpte4322\n"
+        "      Note: This value should be set along with all other color aspects.\n"
+        "            i.e. 'color-primaries', 'color-transfer', 'color-matrix', \n"
+        "            and 'color-range' should all be set."
+    },
+    {
+        ARGS_NO_KEY,  "color-transfer", ARGS_VAL_TYPE_INTEGER, 0, NULL,
+        "TransferCharacteristics value defined in ITU-T H.273\n"
+        "      - 1: bt709\n"
+        "      - 2: unspecified\n"
+        "      - 4: bt470m\n"
+        "      - 5: bt470bg\n"
+        "      - 6: smpte170m\n"
+        "      - 7: smpte240m\n"
+        "      - 8: linear\n"
+        "      - 9: log100\n"
+        "      - 10: log316\n"
+        "      - 11: iec61966-2-4\n"
+        "      - 12: bt1361e\n"
+        "      - 13: iec61966-2-1\n"
+        "      - 14: bt2020-10\n"
+        "      - 15: bt2020-12\n"
+        "      - 16: smpte2084\n"
+        "      - 17: smpte428\n"
+        "      - 18: hybrid log-gamma (HLG), arib-std-b67\n"
+        "      Note: This value should be set along with all other color aspects.\n"
+        "            i.e. 'color-primaries', 'color-transfer', 'color-matrix', \n"
+        "            and 'color-range' should all be set."
+
+    },
+    {
+        ARGS_NO_KEY,  "color-matrix", ARGS_VAL_TYPE_INTEGER, 0, NULL,
+        "MatrixCoefficients value defined in ITU-T H.273\n"
+        "      - 0: gbr\n"
+        "      - 1: bt709\n"
+        "      - 2: unspecified\n"
+        "      - 4: fcc\n"
+        "      - 5: bt470bg\n"
+        "      - 6: smpte170m\n"
+        "      - 7: smpte240m\n"
+        "      - 8: ycgco\n"
+        "      - 9: bt2020nc\n"
+        "      - 10: bt2020c\n"
+        "      - 11: smpte2085\n"
+        "      - 12: chroma-derived-nc\n"
+        "      - 13: chroma-derived-c\n"
+        "      - 14: ictcp\n"
+        "      Note: This value should be set along with all other color aspects.\n"
+        "            i.e. 'color-primaries', 'color-transfer', 'color-matrix', \n"
+        "            and 'color-range' should all be set."
+    },
+    {
+        ARGS_NO_KEY,  "color-range", ARGS_VAL_TYPE_INTEGER, 0, NULL,
+        "Color range\n"
+        "      - 0: limited color range ('tv' color range) \n"
+        "      - 1: full color range ('pc' color range)\n"
+        "      Note: This value should be set along with all other color aspects.\n"
+        "            i.e. 'color-primaries', 'color-transfer', 'color-matrix', \n"
+        "            and 'color-range' should all be set."
+    },
+    {
         ARGS_NO_KEY,  "hash", ARGS_VAL_TYPE_NONE, 0, NULL,
         "embed frame hash value for conformance checking in decoding"
     },
@@ -244,10 +318,10 @@ typedef struct args_var {
     char           tile_w[16];
     char           tile_h[16];
 
-    char           color_primaries[16];
-    char           color_transfer[16];
-    char           color_matrix[16];
-    char           color_range[16];
+    int           color_primaries;
+    int           color_transfer;
+    int           color_matrix;
+    int           color_range;
 
     oapve_param_t *param;
 } args_var_t;
@@ -309,6 +383,16 @@ static args_var_t *args_init_vars(args_parser_t *args, oapve_param_t *param)
     args_set_variable_by_key_long(opts, "tile-h", vars->tile_h);
 
     args_set_variable_by_key_long(opts, "preset", vars->preset);
+
+    args_set_variable_by_key_long(opts, "color-primaries", &vars->color_primaries);
+    vars->color_primaries = -1; /* unset */
+    args_set_variable_by_key_long(opts, "color-transfer", &vars->color_transfer);
+    vars->color_transfer = -1; /* unset */
+    args_set_variable_by_key_long(opts, "color-matrix", &vars->color_matrix);
+    vars->color_matrix = -1; /* unset */
+    args_set_variable_by_key_long(opts, "color-range", &vars->color_range);
+    vars->color_range = -1; /* unset */
+
     return vars;
 }
 
@@ -648,10 +732,21 @@ static int update_param(args_var_t *vars, oapve_param_t *param)
     UPDATE_A_PARAM_W_KEY_VAL(param, "q-matrix-c2", vars->q_matrix_c2);
     UPDATE_A_PARAM_W_KEY_VAL(param, "q-matrix-c3", vars->q_matrix_c3);
 
-    UPDATE_A_PARAM_W_KEY_VAL(param, "color-primaries", vars->color_primaries);
-    UPDATE_A_PARAM_W_KEY_VAL(param, "color-transfer", vars->color_transfer);
-    UPDATE_A_PARAM_W_KEY_VAL(param, "color-matrix", vars->color_matrix);
-    UPDATE_A_PARAM_W_KEY_VAL(param, "color-range", vars->color_range);
+    // check color aspects
+    if(vars->color_primaries >= 0 || vars->color_transfer >= 0 ||
+        vars->color_matrix >= 0 || vars->color_range >= 0) {
+        // need to check all values are set
+        if(vars->color_primaries < 0 || vars->color_transfer < 0 ||
+            vars->color_matrix < 0 || vars->color_range < 0) {
+            logerr("ERR: 'color-primaries', 'color-transfer', 'color-matrix', and 'color-range' should all be set.\n");
+            return -1;
+        }
+        param->color_primaries = vars->color_primaries;
+        param->transfer_characteristics = vars->color_transfer;
+        param->matrix_coefficients = vars->color_matrix;
+        param->full_range_flag = vars->color_range;
+        param->color_description_present_flag = 1;
+    }
 
     UPDATE_A_PARAM_W_KEY_VAL(param, "tile-w", vars->tile_w);
     UPDATE_A_PARAM_W_KEY_VAL(param, "tile-h", vars->tile_h);
