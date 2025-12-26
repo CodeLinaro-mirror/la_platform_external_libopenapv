@@ -7,11 +7,12 @@ OpenAPV provides the reference implementation of the [APV codec](#apv-codec) whi
 
 The OpenAPV supports the following features:
 
-- fully compliant with 422-10 and 400-10 profile of [APV codec](#apv-codec)
+- fully compliant with 422-10, 422-12, 444-10, 444-12, 4444-10, 4444-12, and 400-10 profile of [APV codec](#apv-codec)
 - Low complexity by optimization for ARM NEON and x86(64bit) SEE/AVX CPU
-- Supports tile-based multi-threading
-- Supports Various metadata including HDR10/10+ and user-defined format
-- Constant QP (CQP), average bitrate (ABR), and constant rate factor (CRF) are supported
+- Tile-based multi-threading
+- Various metadata including HDR10/10+ and user-defined format
+- Constant QP (CQP) and average bitrate (ABR) rate control algorithms
+- [APV Family](/readme/apv_family.md) configurations for typical target bitrate setting of encoder
 
 
 ## APV codec
@@ -23,12 +24,12 @@ The APV codec standard has the following features:
 
 - Perceptually lossless video quality, which is close to raw video quality
 - Low complexity and high throughput intra frame only coding without pixel domain prediction
-- Support for high bit-rate range up to a few Gbps for 2K, 4K and 8K resolution content, enabled by a lightweight entropy coding scheme
+- High bit-rate range up to a few Gbps for 2K, 4K and 8K resolution content, enabled by a lightweight entropy coding scheme
 - Frame tiling for immersive content and for enabling parallel encoding and decoding
-- Support for various chroma sampling formats from 4:2:2 to 4:4:4, and bit-depths from 10 to 16
-- Support for multiple decoding and re-encoding without severe visual quality degradation
-- Support multi-view video and auxiliary video like depth, alpha, and preview
-- Support various metadata including HDR10/10+ and user-defined format
+- Various chroma sampling formats from 4:2:2 to 4:4:4, and bit-depths from 10 to 16
+- Multiple decoding and re-encoding without severe visual quality degradation
+- Multi-view video and auxiliary video like depth, alpha, and preview
+- Various metadata including HDR10/10+ and user-defined format
 
 ### Related specification
 - APV Codec (bitstream): [https://datatracker.ietf.org/doc/draft-lim-apv/](https://datatracker.ietf.org/doc/draft-lim-apv/)
@@ -57,7 +58,7 @@ The APV codec standard has the following features:
 
 - Build Instructions ARM (Crosscompile)
   ```
-  cmake -S . -B build-arm -DCMAKE_TOOLCHAIN_FILE=aarch64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+  cmake -S . -B build-arm -DCMAKE_TOOLCHAIN_FILE=arm64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
   cmake --build build-arm
   ```
 
@@ -65,6 +66,24 @@ The APV codec standard has the following features:
   ```
   cmake -S . -B build-windows -DCMAKE_TOOLCHAIN_FILE=windows_x86_64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
   cmake --build build-windows
+  ```
+
+- Build Instructions macOS (Apple Silicon)
+  ```
+  cmake -S . -B build-darwin -DUNIVERSAL=FALSE -DCMAKE_OSX_ARCHITECTURES=arm64 -DARM=1 -DCMAKE_BUILD_TYPE=Release
+  cmake --build build-darwin
+  ```
+
+- Build Instructions macOS (Universal)
+  ```
+  cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=macos_universal_toolchain.cmake -DUNIVERSAL=1 -DCMAKE_BUILD_TYPE=Release
+  cmake --build build
+  ```
+
+- Build Instructions iOS (ARM64)
+  ```
+  cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=ios_arm64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+  cmake --build build
   ```
 
 - Output Location
@@ -127,8 +146,11 @@ Project and library share a common version number.
 See [LICENSE](LICENSE) file for details.
 
 ## Graphic logo
-### logo for light mode
-![OAPV](/readme/img/oapv_logo_black_bar_64.png) ![OAPV](/readme/img/oapv_logo_black_bar_128.png) ![OAPV](/readme/img/oapv_logo_black_bar_256.png)
+### logo
+![OAPV](/readme/img/oapv_logo_bar_64.png) ![OAPV](/readme/img/oapv_logo_bar_128.png) ![OAPV](/readme/img/oapv_logo_bar_256.png) ![OAPV](/readme/img/oapv_logo_bar_512.png)
 
-### logo for dark mode
-![OAPV](/readme/img/oapv_logo_white_bar_64.png) ![OAPV](/readme/img/oapv_logo_white_bar_128.png) ![OAPV](/readme/img/oapv_logo_white_bar_256.png)
+### black color logo for light background
+![OAPV](/readme/img/oapv_logo_black_bar_64.png) ![OAPV](/readme/img/oapv_logo_black_bar_128.png) ![OAPV](/readme/img/oapv_logo_black_bar_256.png) ![OAPV](/readme/img/oapv_logo_black_bar_512.png)
+
+### white color logo for dark background
+![OAPV](/readme/img/oapv_logo_white_bar_64.png) ![OAPV](/readme/img/oapv_logo_white_bar_128.png) ![OAPV](/readme/img/oapv_logo_white_bar_256.png) ![OAPV](/readme/img/oapv_logo_white_bar_512.png)

@@ -88,6 +88,14 @@ else()
   set(ARM "TRUE")
 endif()
 
+# To build for universal architectures provide in command line: -DUNIVERSAL=TRUE
+if(NOT UNIVERSAL)
+  set(UNIVERSAL "FALSE")
+else()
+  add_definitions(-DUNIVERSAL=1)
+  set(UNIVERSAL "TRUE")
+endif()
+
 ########################################
 # Compilation flags
 ########################################

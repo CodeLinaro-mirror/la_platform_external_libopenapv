@@ -58,7 +58,7 @@ extern "C" {
 #define OAPV_VER_APISET                 (0)
 #define OAPV_VER_MAJOR                  (2)
 #define OAPV_VER_MINOR                  (0)
-#define OAPV_VER_PATCH                  (3)
+#define OAPV_VER_PATCH                  (4)
 
 /* 4-bytes version number */
 #define OAPV_VER_NUM \
