@@ -57,8 +57,8 @@ extern "C" {
 /* version numbers (should be changed in case of new release) */
 #define OAPV_VER_APISET                 (0)
 #define OAPV_VER_MAJOR                  (2)
-#define OAPV_VER_MINOR                  (0)
-#define OAPV_VER_PATCH                  (4)
+#define OAPV_VER_MINOR                  (1)
+#define OAPV_VER_PATCH                  (1)
 
 /* 4-bytes version number */
 #define OAPV_VER_NUM \
@@ -658,8 +658,10 @@ struct oapvm_payload {
 /*****************************************************************************
  * interface for metadata container
  *****************************************************************************/
-typedef void       *oapvm_t; // instance identifier for OAPV metadata container
+/* instance identifier for OAPV metadata container*/
+typedef void       *oapvm_t;
 
+/* main APIs *****************************************************************/
 OAPV_EXPORT oapvm_t oapvm_create(int *err);
 OAPV_EXPORT void oapvm_delete(oapvm_t mid);
 OAPV_EXPORT int oapvm_set(oapvm_t mid, int group_id, int type, void *data, int size);
@@ -669,11 +671,48 @@ OAPV_EXPORT int oapvm_set_all(oapvm_t mid, oapvm_payload_t *pld, int num_plds);
 OAPV_EXPORT int oapvm_get_all(oapvm_t mid, oapvm_payload_t *pld, int *num_plds);
 OAPV_EXPORT void oapvm_rem_all(oapvm_t mid);
 
+/* utility APIs **************************************************************/
+/* Mastering display colour volume metadata payload */
+typedef struct oapvm_payload_mdcv oapvm_payload_mdcv_t;
+struct oapvm_payload_mdcv {
+    int           primary_chromaticity_x[3];  /* range: 0 ~ 0xFFFF */
+    int           primary_chromaticity_y[3];  /* range: 0 ~ 0xFFFF */
+    int           white_point_chromaticity_x; /* range: 0 ~ 0xFFFF */
+    int           white_point_chromaticity_y; /* range: 0 ~ 0xFFFF */
+    unsigned long max_mastering_luminance;    /* range: 0 ~ 0xFFFFFFFF */
+    unsigned long min_mastering_luminance;    /* range: 0 ~ 0xFFFFFFFF */
+};
+
+/* Content light level information metadata payload */
+typedef struct oapvm_payload_cll oapvm_payload_cll_t;
+struct oapvm_payload_cll {
+    int max_cll;  /* range: 0 ~ 0xFFFF */
+    int max_fall; /* range: 0 ~ 0xFFFF */
+};
+
+/* write to metadata_mdcv() payload syntax
+ * note: the size of 'data' buffer should be 24 bytes or larger.
+ */
+OAPV_EXPORT int oapvm_write_mdcv(oapvm_payload_mdcv_t *mdcv, void *data, int *size);
+
+/* read from metadata_mdcv() payload syntax */
+OAPV_EXPORT int oapvm_read_mdcv(void *data, int size, oapvm_payload_mdcv_t *mdcv);
+
+/* write to metadata_cll() payload syntax
+ * note: the size of 'data' buffer should be 4 bytes or larger.
+ */
+OAPV_EXPORT int oapvm_write_cll(oapvm_payload_cll_t *cll, void *data, int *size);
+
+/* read from metadata_cll() payload syntax */
+OAPV_EXPORT int oapvm_read_cll(void *data, int size, oapvm_payload_cll_t *cll);
+
 /*****************************************************************************
  * interface for encoder
  *****************************************************************************/
-typedef void       *oapve_t; /* instance identifier for OAPV encoder */
+/* instance identifier for OAPV encoder */
+typedef void       *oapve_t;
 
+/* main APIs *****************************************************************/
 OAPV_EXPORT oapve_t oapve_create(oapve_cdesc_t *cdesc, int *err);
 OAPV_EXPORT void oapve_delete(oapve_t eid);
 OAPV_EXPORT int oapve_config(oapve_t eid, int cfg, void *buf, int *size);
@@ -681,21 +720,23 @@ OAPV_EXPORT int oapve_param_default(oapve_param_t *param);
 OAPV_EXPORT int oapve_param_parse(oapve_param_t* param, const char* name,  const char* value);
 OAPV_EXPORT int oapve_encode(oapve_t eid, oapv_frms_t *ifrms, oapvm_t mid, oapv_bitb_t *bitb, oapve_stat_t *stat, oapv_frms_t *rfrms);
 
+/* utility APIs **************************************************************/
+OAPV_EXPORT int oapve_family_bitrate(int family, int w, int h, int fps_num, int fps_den, int * kbps);
+
 /*****************************************************************************
  * interface for decoder
  *****************************************************************************/
-typedef void       *oapvd_t; /* instance identifier for OAPV decoder */
+/* instance identifier for OAPV decoder */
+typedef void       *oapvd_t;
 
+/* main APIs *****************************************************************/
 OAPV_EXPORT oapvd_t oapvd_create(oapvd_cdesc_t *cdesc, int *err);
 OAPV_EXPORT void oapvd_delete(oapvd_t did);
 OAPV_EXPORT int oapvd_config(oapvd_t did, int cfg, void *buf, int *size);
 OAPV_EXPORT int oapvd_decode(oapvd_t did, oapv_bitb_t *bitb, oapv_frms_t *ofrms, oapvm_t mid, oapvd_stat_t *stat);
 
-/*****************************************************************************
- * interface for utility
- *****************************************************************************/
+/* utility APIs **************************************************************/
 OAPV_EXPORT int oapvd_info(void *au, int au_size, oapv_au_info_t *aui);
-OAPV_EXPORT int oapve_family_bitrate(int family, int w, int h, int fps_num, int fps_den, int * kbps);
 
 /*****************************************************************************
  * openapv version

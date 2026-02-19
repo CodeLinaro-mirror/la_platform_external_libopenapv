@@ -132,6 +132,40 @@ Pattern file of APV bitstream for [ImHex](https://github.com/WerWolv/ImHex) is p
 
 In build directory run ``ctest``
 
+## Code Coverage
+
+To generate a code coverage report manually:
+
+1.  **`lcov` is required.**
+
+2.  **Build and Test with Coverage:**
+    ```bash
+    # Create build directory and configure with coverage enabled
+    cmake -S . -B build -DENABLE_COVERAGE=ON
+
+    # Build the project
+    cmake --build build
+
+    # Run tests to generate coverage data
+    cd build && ctest && cd ..
+    ```
+
+3.  **Generate HTML Report:**
+    ```bash
+    # Capture coverage data
+    lcov --capture --directory build --output-file build/coverage.info
+
+    # Remove coverage for external files (optional)
+    lcov --remove build/coverage.info '/usr/*' --output-file build/coverage.info
+
+    # Generate the HTML report
+    mkdir -p coverage_report
+    genhtml build/coverage.info --output-directory coverage_report
+    ```
+
+4.  **View Report:**
+    Open `coverage_report/index.html` in your web browser.
+
 ## Packaging
 
 For generating package ready for distribution (default deb) execute in build directory ``cpack``,  or other formats (tgz, zip etc.) ``cpack -G TGZ``.

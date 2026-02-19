@@ -7,16 +7,16 @@ description: "Open source APV Video Codec implementation"
 third_party {
   license_type: NOTICE
   last_upgrade_date {
-    year: 2025
-    month: 10
-    day: 21
+    year: 2026
+    month: 2
+    day: 19
   }
   homepage: "https://github.com/openapv/openapv"
   identifier {
     type: "Git"
     value: "https://github.com/openapv/openapv.git"
-    version: "d6b0dfc196a23bc29a1b4f8fc6efeaf33179e6cb"
-    closest_version: "v0.2.0.4"
+    version: "3e87fa5101c3fe4038035b562cf552755fcf2060"
+    closest_version: "v0.2.1.1"
     primary_source: true
   }
 }
