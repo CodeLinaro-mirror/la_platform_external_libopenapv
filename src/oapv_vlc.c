@@ -45,6 +45,19 @@
         (bs)->leftbits = 32;                      \
     }
 
+#define BSW_FLUSH_8BYTE(bs) {                     \
+        *(bs)->cur++ = ((bs)->code >> 56) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 48) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 40) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 32) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 24) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 16) & 0xFF; \
+        *(bs)->cur++ = ((bs)->code >> 8) & 0xFF;  \
+        *(bs)->cur++ = ((bs)->code) & 0xFF;       \
+        (bs)->code = 0;                           \
+        (bs)->leftbits = 64;                      \
+    }
+
 #define BSW_WRITE_32BITS(bs, code32, nbits) { \
         (code32) <<= (32 - (nbits)); \
         if((nbits) < (bs)->leftbits) { \
@@ -64,18 +77,23 @@
     }
 
 #define BSW_WRITE_64BITS(bs, code64, nbits) { \
-        (code64) <<= (64 - nbits); \
-        while((nbits) >= (bs)->leftbits) { \
-            (bs)->code |= ((code64) >> (64 - (bs)->leftbits)); \
-            (code64) <<= (bs)->leftbits; \
-            (nbits) -= (bs)->leftbits; \
-            BSW_FLUSH_4BYTE(bs); \
-        } \
-        if((nbits) > 0) { \
+        (code64) <<= (64 - (nbits)); \
+        if((nbits) < (bs)->leftbits) { \
             (bs)->code |= ((code64) >> (64 - (bs)->leftbits)); \
             (bs)->leftbits -= (nbits); \
         } \
+        else { \
+            (bs)->code |= ((code64) >> (64 - (bs)->leftbits)); \
+            (code64) <<= (bs)->leftbits; \
+            (nbits) -= (bs)->leftbits; \
+            BSW_FLUSH_8BYTE(bs); \
+            if((nbits) > 0) { \
+                (bs)->code |= ((code64) >> (64 - (bs)->leftbits)); \
+                (bs)->leftbits -= (nbits); \
+            } \
+        } \
     }
+
 
 #define ADD_BITS_TO_CODE(val, nb, code) ((code) << (nb) | (val))
 
@@ -83,7 +101,7 @@ static const u8 enc_prefix_vlc[3][2] = {{1, 0xFF}, {0, 0}, {0, 1}}; // 0xFF is d
 
 static void enc_vlc_write(oapv_bs_t *bs, int val, int k)
 {
-    u32 code = 0;
+    u64 code = 0; /* this value can exceed 32bit in custom QP matrix with all '1' */
     u32 symbol = val;
     int nb = 0;
     int vlc_idx = oapv_min(val >> k, 2);  // 'val' is always positive or zero
@@ -111,12 +129,12 @@ static void enc_vlc_write(oapv_bs_t *bs, int val, int k)
         nb += k;
     }
     // write to bitstream buffer
-    BSW_WRITE_32BITS(bs, code, nb);
+    BSW_WRITE_64BITS(bs, code, nb);
 }
 
-static u32 enc_vlc_write_to_code(oapv_bs_t *bs, int val, int k, int *nbits)
+static u64 enc_vlc_write_to_code(oapv_bs_t *bs, int val, int k, int *nbits)
 {
-    u32 code = 0;
+    u64 code64 = 0;
     u32 symbol = val;
     int nb = 0;
     int vlc_idx = oapv_min(val >> k, 2);  // 'val' is always positive or zero
@@ -124,28 +142,28 @@ static u32 enc_vlc_write_to_code(oapv_bs_t *bs, int val, int k, int *nbits)
     while(symbol >= (1 << k)) {
         symbol -= (1 << k);
         if(nb < 2) {
-            code = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code);
+            code64 = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code64);
         }
         else {
-            code = ADD_BITS_TO_CODE(0, 1, code);
+            code64 = ADD_BITS_TO_CODE(0, 1, code64);
             k++;
         }
         nb++;
     }
     if(nb < 2) {
-        code = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code);
+        code64 = ADD_BITS_TO_CODE(enc_prefix_vlc[vlc_idx][nb], 1, code64);
     }
     else {
-        code = ADD_BITS_TO_CODE(1, 1, code);
+        code64 = ADD_BITS_TO_CODE(1, 1, code64);
 
     }
     nb++;
     if(k > 0) {
-        code = ADD_BITS_TO_CODE(symbol, k, code);
+        code64 = ADD_BITS_TO_CODE(symbol, k, code64);
         nb += k;
     }
     *nbits = nb;
-    return code;
+    return code64;
 }
 
 static int enc_vlc_quantization_matrix(oapv_bs_t *bs, oapve_ctx_t *ctx, oapv_fh_t *fh)
@@ -175,28 +193,28 @@ static int enc_vlc_tile_info(oapv_bs_t *bs, oapve_ctx_t *ctx, oapv_fh_t *fh)
             DUMP_HLS(fh->tile_size, fh->tile_size[i]);
         }
     }
-
     return 0;
 }
 
 int oapve_vlc_dc_coef(oapv_bs_t *bs, int dc_diff, int *kparam_dc)
 {
-    u32 code;
+    u64 code64 = 0; /* this value can exceed 32bit in custom QP matrix with all '1' */
     int nbits;
     int abs_dc_diff = oapv_abs32(dc_diff);
 
-    code = enc_vlc_write_to_code(bs, abs_dc_diff, *kparam_dc, &nbits);
+    code64 = enc_vlc_write_to_code(bs, abs_dc_diff, *kparam_dc, &nbits);
 
     if(abs_dc_diff) {
         int sign_dc_diff = oapv_get_sign32(dc_diff);
-        code = ADD_BITS_TO_CODE(sign_dc_diff, 1, code);
+        code64 = ADD_BITS_TO_CODE(sign_dc_diff, 1, code64);
         *kparam_dc = KPARAM_DC(abs_dc_diff);
         nbits++;
     }
     else {
         *kparam_dc = OAPV_KPARAM_DC_MIN;
     }
-    BSW_WRITE_32BITS(bs, code, nbits);
+    BSW_WRITE_64BITS(bs, code64, nbits);
+
     return OAPV_OK;
 }
 
@@ -208,27 +226,28 @@ void oapve_vlc_ac_coef(oapv_bs_t* bs, s16* coef, int * kparam_ac)
     const u8 *scanp = oapv_tbl_scan;
     int       k_run = OAPV_KPARAM_RUN_MIN;
     int       k_ac = *kparam_ac;
-    u32       code;
+    u64       code64;
     int       nbits;
 
     for (scan_pos = 1; scan_pos < OAPV_BLK_D; scan_pos++) {
         c = coef[scanp[scan_pos]];
         if(c) {
             // run coding
-            code = oapve_tbl_vlc_code[run][k_run][0];
+            code64 = oapve_tbl_vlc_code[run][k_run][0];
             nbits = oapve_tbl_vlc_code[run][k_run][1];
             k_run = KPARAM_RUN(run); // update kparam for run
             run = 0; // reset run
-            BSW_WRITE_32BITS(bs, code, nbits);
+
+            BSW_WRITE_64BITS(bs, code64, nbits);
 
             // level and sign coding
             level = oapv_abs16(c);
             if(level < 101) { // early termination
-                code  = oapve_tbl_vlc_code[level - 1][k_ac][0];
+                code64  = oapve_tbl_vlc_code[level - 1][k_ac][0];
                 nbits = oapve_tbl_vlc_code[level - 1][k_ac][1];
             }
             else {
-                code = enc_vlc_write_to_code(bs, level - 1, k_ac, &nbits);
+                code64 = enc_vlc_write_to_code(bs, level - 1, k_ac, &nbits);
             }
             k_ac = KPARAM_AC(level);
             if (first_ac) {
@@ -236,18 +255,20 @@ void oapve_vlc_ac_coef(oapv_bs_t* bs, s16* coef, int * kparam_ac)
                 *kparam_ac = k_ac;
             }
             sign  = oapv_get_sign16(c);
-            code = ADD_BITS_TO_CODE(sign, 1, code);
+            code64 = ADD_BITS_TO_CODE(sign, 1, code64);
             nbits++;
-            BSW_WRITE_32BITS(bs, code, nbits);
+
+            BSW_WRITE_64BITS(bs, code64, nbits);
         }
         else { // zero coefficent value
             run++;
         }
     }
     if(run > 0) { // last position can be zero
-        code = oapve_tbl_vlc_code[run][k_run][0];
+        code64 = oapve_tbl_vlc_code[run][k_run][0];
         nbits = oapve_tbl_vlc_code[run][k_run][1];
-        BSW_WRITE_32BITS(bs, code, nbits);
+
+        BSW_WRITE_64BITS(bs, code64, nbits);
     }
 }
 
@@ -593,13 +614,13 @@ int oapve_vlc_get_coef_rate(oapve_core_t* core, s16* coef, int c)
 // start of decoder code
 #if ENABLE_DECODER
 ///////////////////////////////////////////////////////////////////////////////
-#define BSR_FLUSH_1BYTE(bs) {                   \
-        (bs)->code = *((bs)->cur++) << 24;      \
-        (bs)->leftbits = 8;                     \
+#define BSR_FLUSH_1BYTE(bs) {                       \
+        (bs)->code = ((u64)(*((bs)->cur++))) << 56; \
+        (bs)->leftbits = 8;                         \
     }
 
 #define BSR_READ_1BIT(bs, bit) {                \
-        (bit) = ((bs)->code >> 31) & 0x1;       \
+        (bit) = ((bs)->code >> 63) & 0x1;       \
         (bs)->code <<= 1;                       \
         (bs)->leftbits -= 1;                    \
     }
@@ -627,11 +648,11 @@ static int dec_vlc_read_kparam0(oapv_bs_t *bs)
         symbol += ((u32)0xFFFFFFFF) >> (32 - k);
 
         while(bs->leftbits < k) {
-            symbol += bs->code >> (32 - k);
+            symbol += bs->code >> (64 - k);
             k -= bs->leftbits;
             BSR_FLUSH_1BYTE(bs);
         }
-        symbol += bs->code >> (32 - k);
+        symbol += bs->code >> (64 - k);
         bs->code <<= k;
         bs->leftbits -= k;
     }
@@ -665,11 +686,11 @@ static int dec_vlc_read_1bit_read(oapv_bs_t *bs)
         symbol += ((u32)0xFFFFFFFF) >> (32 - k);
 
         while(bs->leftbits < k) {
-            symbol += bs->code >> (32 - k);
+            symbol += bs->code >> (64 - k);
             k -= bs->leftbits;
             BSR_FLUSH_1BYTE(bs);
         }
-        symbol += bs->code >> (32 - k);
+        symbol += bs->code >> (64 - k);
         bs->code <<= k;
         bs->leftbits -= k;
     }
@@ -711,11 +732,11 @@ static int dec_vlc_read(oapv_bs_t *bs, int k)
     }
     if(k > 0) {
         while(bs->leftbits < k) {
-            symbol += bs->code >> (32 - k);
+            symbol += bs->code >> (64 - k);
             k -= bs->leftbits;
             BSR_FLUSH_1BYTE(bs);
         }
-        symbol += bs->code >> (32 - k);
+        symbol += bs->code >> (64 - k);
         bs->code <<= k;
         bs->leftbits -= k;
     }
@@ -1061,18 +1082,27 @@ int oapvd_vlc_tile_size(oapv_bs_t *bs, u32 *tile_size)
     return OAPV_OK;
 }
 
-int oapvd_vlc_tile_header(oapv_bs_t *bs, oapvd_ctx_t *ctx, oapv_th_t *th)
+int oapvd_vlc_tile_header(oapv_bs_t *bs, int num_comp, oapv_th_t *th, u32 tile_size)
 {
+    u32 read_size = 0;
+
     th->tile_header_size = oapv_bsr_read(bs, 16);
     DUMP_HLS(th->tile_header_size, th->tile_header_size);
+
+    // check 'tile_header_size' syntax value
+    // # of bytes = tile_header_size (2) + tile_index (2) + reserved_zero_8bits (1) + num_comp * (tile_data_size(4) + tile_qp(1))
+    oapv_assert_rv(th->tile_header_size == (5 + (num_comp*5)), OAPV_ERR_MALFORMED_BITSTREAM)
+    read_size += th->tile_header_size;
+
     th->tile_index = oapv_bsr_read(bs, 16);
     DUMP_HLS(th->tile_index, th->tile_index);
-    for(int c = 0; c < ctx->num_comp; c++) {
+    for(int c = 0; c < num_comp; c++) {
         th->tile_data_size[c] = oapv_bsr_read(bs, 32);
         DUMP_HLS(th->tile_data_size, th->tile_data_size[c]);
-        oapv_assert_rv(th->tile_data_size[c] > 0, OAPV_ERR_MALFORMED_BITSTREAM);
+        oapv_assert_rv((tile_size - read_size) >= th->tile_data_size[c], OAPV_ERR_MALFORMED_BITSTREAM);
+        read_size += th->tile_data_size[c];
     }
-    for(int c = 0; c < ctx->num_comp; c++) {
+    for(int c = 0; c < num_comp; c++) {
         th->tile_qp[c] = oapv_bsr_read(bs, 8);
         DUMP_HLS(th->tile_qp, th->tile_qp[c]);
     }
@@ -1087,7 +1117,7 @@ int oapvd_vlc_tile_header(oapv_bs_t *bs, oapvd_ctx_t *ctx, oapv_th_t *th)
 
 int oapvd_vlc_tile_dummy_data(oapv_bs_t *bs)
 {
-    while(bs->cur < bs->end) {
+    while(BSR_GET_LEFT_BYTE(bs) > 0) {
         oapv_bsr_read(bs, 8);
     }
     return OAPV_OK;
@@ -1101,7 +1131,7 @@ int oapvd_vlc_metadata(oapv_bs_t *bs, u32 pbu_size, oapvm_t mid, int group_id)
     metadata_size = oapv_bsr_read(bs, 32);
     DUMP_HLS(metadata_size, metadata_size);
     oapv_assert_gv(pbu_size >= 8 && metadata_size <= (pbu_size - 8), ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
-    u8 *bs_start_pos = bs->cur;
+    u8 *bs_start_pos = oapv_bsr_sink(bs);
     u8 *payload_data = NULL;
 
     while(metadata_size > 0) {
@@ -1135,8 +1165,7 @@ int oapvd_vlc_metadata(oapv_bs_t *bs, u32 pbu_size, oapvm_t mid, int group_id)
         payload_data = oapv_bsr_sink(bs);
 #if ENC_DEC_DUMP
         for(int i = 0; i < payload_size; i++) {
-            t0 = bs->cur[i];
-            DUMP_HLS(payload_data, t0);
+            DUMP_HLS(payload_data, payload_data[i]);
         }
 #endif
         if (payload_size == 0) {
@@ -1148,9 +1177,12 @@ int oapvd_vlc_metadata(oapv_bs_t *bs, u32 pbu_size, oapvm_t mid, int group_id)
         metadata_size -= payload_size;
     }
     const u32 target_read_size = (pbu_size - 8);
-    oapv_assert_gv(target_read_size >= (bs->cur - bs_start_pos), ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
-    ret = oapvd_vlc_filler(bs, target_read_size - (bs->cur - bs_start_pos));
-    oapv_assert_g(OAPV_SUCCEEDED(ret), ERR);
+    int filler_size = target_read_size - ((u8*)oapv_bsr_sink(bs) - bs_start_pos);
+    oapv_assert_gv(filler_size >= 0, ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
+    if(filler_size > 0) {
+        ret = oapvd_vlc_filler(bs, filler_size);
+        oapv_assert_g(OAPV_SUCCEEDED(ret), ERR);
+    }
     return OAPV_OK;
 
 ERR:

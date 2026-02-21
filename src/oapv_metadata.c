@@ -180,6 +180,96 @@ static void meta_free_md(oapv_md_t *md)
     }
 }
 
+int oapvm_write_mdcv(oapvm_payload_mdcv_t *mdcv, void *data, int *size)
+{
+    int i, t;
+    u32 tu32;
+    oapv_bs_t bs;
+    oapv_bsw_init(&bs, data, 24, NULL); // MDCV payload has 24 bytes
+
+    for(i = 0; i < 3; i++) {
+        t = mdcv->primary_chromaticity_x[i];
+        oapv_assert_rv(t >=0 && t <= 0xFFFF, OAPV_ERR_INVALID_ARGUMENT);
+        oapv_bsw_write(&bs, t, 16);
+
+        t = mdcv->primary_chromaticity_y[i];
+        oapv_assert_rv(t >=0 && t <= 0xFFFF, OAPV_ERR_INVALID_ARGUMENT);
+        oapv_bsw_write(&bs, t, 16);
+    }
+    t = mdcv->white_point_chromaticity_x;
+    oapv_assert_rv(t >=0 && t <= 0xFFFF, OAPV_ERR_INVALID_ARGUMENT);
+    oapv_bsw_write(&bs, t, 16);
+
+    t = mdcv->white_point_chromaticity_y;
+    oapv_assert_rv(t >=0 && t <= 0xFFFF, OAPV_ERR_INVALID_ARGUMENT);
+    oapv_bsw_write(&bs, t, 16);
+
+    oapv_assert_rv(mdcv->max_mastering_luminance <= 0xFFFFFFFF, OAPV_ERR_INVALID_ARGUMENT);
+    tu32 = mdcv->max_mastering_luminance;
+    oapv_bsw_write(&bs, tu32, 32);
+
+    oapv_assert_rv(mdcv->min_mastering_luminance <= 0xFFFFFFFF, OAPV_ERR_INVALID_ARGUMENT);
+    tu32 = mdcv->min_mastering_luminance;
+    oapv_bsw_write(&bs, tu32, 32);
+
+    oapv_bsw_deinit(&bs);
+
+    *size = 24; // MDCV payload has 24 bytes
+    return OAPV_OK;
+}
+
+int oapvm_read_mdcv(void *data, int size, oapvm_payload_mdcv_t *mdcv)
+{
+    int i;
+    oapv_bs_t bs;
+    oapv_assert_rv(size >= 24, OAPV_ERR_INVALID_ARGUMENT);
+    oapv_bsr_init(&bs, data, size, NULL); // MDCV payload has 24 bytes
+
+    for(i = 0; i < 3; i++) {
+        mdcv->primary_chromaticity_x[i] = oapv_bsr_read(&bs, 16);
+    }
+    for(i = 0; i < 3; i++) {
+        mdcv->primary_chromaticity_y[i] = oapv_bsr_read(&bs, 16);
+    }
+    mdcv->white_point_chromaticity_x = oapv_bsr_read(&bs, 16);
+    mdcv->white_point_chromaticity_y = oapv_bsr_read(&bs, 16);
+
+    mdcv->max_mastering_luminance = oapv_bsr_read(&bs, 32);
+    mdcv->min_mastering_luminance = oapv_bsr_read(&bs, 32);
+    return OAPV_OK;
+}
+
+int oapvm_write_cll(oapvm_payload_cll_t *cll, void *data, int *size)
+{
+    int t;
+    oapv_bs_t bs;
+    oapv_bsw_init(&bs, data, 4, NULL); // CLL payload has 4 bytes
+
+    t = cll->max_cll;
+    oapv_assert_rv(t >=0 && t <= 0xFFFF, OAPV_ERR_INVALID_ARGUMENT);
+    oapv_bsw_write(&bs, t, 16);
+
+    t = cll->max_fall;
+    oapv_assert_rv(t >=0 && t <= 0xFFFF, OAPV_ERR_INVALID_ARGUMENT);
+    oapv_bsw_write(&bs, t, 16);
+
+    oapv_bsw_deinit(&bs);
+
+    *size = 4; // CLL payload has 4 bytes
+    return OAPV_OK;
+}
+
+int oapvm_read_cll(void *data, int size, oapvm_payload_cll_t *cll)
+{
+    oapv_bs_t bs;
+    oapv_assert_rv(size >= 4, OAPV_ERR_INVALID_ARGUMENT);
+    oapv_bsr_init(&bs, data, size, NULL); // CLL payload has 4 bytes
+
+    cll->max_cll = oapv_bsr_read(&bs, 16);
+    cll->max_fall = oapv_bsr_read(&bs, 16);
+    return OAPV_OK;
+}
+
 int oapvm_set(oapvm_t mid, int group_id, int type, void *data, int size)
 {
     void        *pld_data_new = NULL;
