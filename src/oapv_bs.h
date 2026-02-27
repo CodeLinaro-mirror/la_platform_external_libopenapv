@@ -38,7 +38,7 @@ typedef struct oapv_bs oapv_bs_t;
 typedef int (*oapv_bs_fn_flush_t)(oapv_bs_t *bs, int byte);
 
 struct oapv_bs {
-    u32                code;     // intermediate code buffer
+    u64                code;     // intermediate code buffer
     int                leftbits; // left bits count in code
     u8                *cur;      // address of current bitstream position
     u8                *end;      // address of bitstream end
@@ -53,6 +53,12 @@ struct oapv_bs {
 // start of encoder code
 #if ENABLE_ENCODER
 ///////////////////////////////////////////////////////////////////////////////
+
+/* move current write position to a specific bitstream address */
+#define BSW_MOVE_CUR(bs, addr) \
+    (bs)->cur = addr; \
+    (bs)->code = 0; \
+    (bs)->leftbits = 64;
 
 static inline bool bsw_is_align8(oapv_bs_t *bs)
 {
@@ -94,7 +100,8 @@ should set zero in that case. */
 #endif
 #else
 #define BSR_SKIP_CODE(bs, size) \
-    oapv_assert((bs)->leftbits >= (size) && (size) <= 32); \
+    /* 64bit is missing here to avoid the arithmetic left shift */ \
+    oapv_assert((bs)->leftbits >= (size) && (size) < 64); \
     (bs)->code <<= (size); (bs)->leftbits -= (size);
 #endif
 
