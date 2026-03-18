@@ -35,6 +35,7 @@
 // start of encoder code
 #if ENABLE_ENCODER
 ///////////////////////////////////////////////////////////////////////////////
+
 /* number of bytes to be sunk */
 #define BSW_GET_SINK_BYTE(bs) ((64 - (bs)->leftbits + 7) >> 3)
 
@@ -145,13 +146,7 @@ int oapv_bsw_write(oapv_bs_t *bs, u32 val, int len)
 #if ENABLE_DECODER
 ///////////////////////////////////////////////////////////////////////////////
 
-/* Table of count of leading zero for 4 bit value */
-static const u8 tbl_zero_count4[16] = {
-    4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-// skip code if lefbits are larger than skip bit count;
-static void inline bsr_skip_code(oapv_bs_t *bs, int size)
+static inline void bsr_skip_code(oapv_bs_t *bs, int size)
 {
     oapv_assert(size <= 32);
     oapv_assert(bs->leftbits >= size);
@@ -195,6 +190,8 @@ static int bsr_flush(oapv_bs_t *bs, int byte)
 
 void oapv_bsr_init(oapv_bs_t *bs, u8 *buf, u32 size, oapv_bs_fn_flush_t fn_flush)
 {
+    oapv_mset(bs, 0, sizeof(oapv_bs_t));
+
     bs->size = size;
     bs->cur = buf;
     bs->beg = buf;
@@ -202,36 +199,6 @@ void oapv_bsr_init(oapv_bs_t *bs, u8 *buf, u32 size, oapv_bs_fn_flush_t fn_flush
     bs->code = 0;
     bs->leftbits = 0;
     bs->fn_flush = (fn_flush == NULL) ? bsr_flush : fn_flush;
-}
-
-int oapv_bsr_clz_in_code(u32 code)
-{
-    int clz, bits4, shift;
-
-    if(code == 0)
-        return 64; /* to protect infinite loop */
-
-    bits4 = 0;
-    clz = 0;
-    shift = 56;
-
-    while(bits4 == 0 && shift >= 0) {
-        bits4 = (code >> shift) & 0xf;
-        clz += tbl_zero_count4[bits4];
-        shift -= 4;
-    }
-    return clz;
-}
-
-int oapv_bsr_clz(oapv_bs_t *bs)
-{
-    int clz;
-    u32 code;
-
-    code = oapv_bsr_peek(bs, 64); /* supports max 64bit codeword */
-    oapv_assert(code != 0);
-    clz = oapv_bsr_clz_in_code(code);
-    return clz;
 }
 
 void oapv_bsr_align8(oapv_bs_t *bs)
@@ -261,45 +228,6 @@ void oapv_bsr_skip(oapv_bs_t *bs, int size)
         }
     }
     bsr_skip_code(bs, size);
-}
-
-u32 oapv_bsr_peek(oapv_bs_t *bs, int size)
-{
-    int byte, leftbits;
-    u32 code = 0;
-
-    if(bs->leftbits < size) {
-        byte = (64 - bs->leftbits) >> 3;
-
-        /* We should not check the return value
-        because this function could be failed at the EOB. */
-        if(byte) {
-            code = bs->code;
-            leftbits = bs->leftbits;
-
-            bs->fn_flush(bs, byte);
-
-            bs->code >>= leftbits;
-            bs->code |= code;
-            bs->leftbits += leftbits;
-        }
-    }
-
-    oapv_assert(bs->leftbits <= 64);
-
-    code = bs->code >> (64 - size);
-    size -= bs->leftbits;
-
-    if(size > 0) {
-        /* even though we update several bytes, the requested size would be
-        larger than current bs->leftbits.
-        In this case, we should read one more byte, but we could not store
-        the read byte. */
-        if(bs->cur < bs->end) {
-            code |= *(bs->cur) >> (8 - size);
-        }
-    }
-    return code;
 }
 
 void *oapv_bsr_sink(oapv_bs_t *bs)
