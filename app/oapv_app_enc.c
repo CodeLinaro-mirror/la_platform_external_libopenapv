@@ -275,6 +275,14 @@ static const args_opt_t enc_args_opts[] = {
         ARGS_NO_KEY,  "hash", ARGS_VAL_TYPE_NONE, 0, NULL,
         "embed frame hash value for conformance checking in decoding"
     },
+    {
+        ARGS_NO_KEY,  "master-display", ARGS_VAL_TYPE_STRING, 0, NULL,
+        "mastering display color volume metadata"
+    },
+    {
+        ARGS_NO_KEY,  "max-cll", ARGS_VAL_TYPE_STRING, 0, NULL,
+        "content light level information metadata"
+    },
     {ARGS_END_KEY, "", ARGS_VAL_TYPE_NONE, 0, NULL, ""} /* termination */
 };
 
@@ -318,10 +326,13 @@ typedef struct args_var {
     char           tile_w[16];
     char           tile_h[16];
 
-    int           color_primaries;
-    int           color_transfer;
-    int           color_matrix;
-    int           color_range;
+    int            color_primaries;
+    int            color_transfer;
+    int            color_matrix;
+    int            color_range;
+
+    char           master_display[512];
+    char           max_cll[64];
 
     oapve_param_t *param;
 } args_var_t;
@@ -392,6 +403,9 @@ static args_var_t *args_init_vars(args_parser_t *args, oapve_param_t *param)
     vars->color_matrix = -1; /* unset */
     args_set_variable_by_key_long(opts, "color-range", &vars->color_range);
     vars->color_range = -1; /* unset */
+
+    args_set_variable_by_key_long(opts, "master-display", vars->master_display);
+    args_set_variable_by_key_long(opts, "max-cll", vars->max_cll);
 
     return vars;
 }
@@ -753,6 +767,98 @@ static int update_param(args_var_t *vars, oapve_param_t *param)
     return 0;
 }
 
+static int parse_master_display(const char* data_string, oapvm_payload_mdcv_t *mdcv)
+{
+    int assigned_fields = sscanf(data_string,
+        "G(%u,%u)B(%u,%u)R(%u,%u)WP(%u,%u)L(%lu,%lu)",
+        &mdcv->primary_chromaticity_x[1], &mdcv->primary_chromaticity_y[1], // G
+        &mdcv->primary_chromaticity_x[2], &mdcv->primary_chromaticity_y[2], // B
+        &mdcv->primary_chromaticity_x[0], &mdcv->primary_chromaticity_y[0], // R
+        &mdcv->white_point_chromaticity_x, &mdcv->white_point_chromaticity_y, // White Point
+        &mdcv->max_mastering_luminance, &mdcv->min_mastering_luminance       // Luminance
+    );
+
+    // Check if sscanf successfully assigned all expected fields (10 numerical values).
+    const int expected_fields = 10;
+    if (assigned_fields != expected_fields) {
+        logerr("Parsing error: master diplay color volume information");
+        return -1;
+    }
+    return 0; // Success
+}
+
+static int parse_max_cll(const char* data_string, oapvm_payload_cll_t *cll)
+{
+    int assigned_fields = sscanf(data_string,
+        "%u,%u",
+        &cll->max_cll, &cll->max_fall
+    );
+
+    // Check if sscanf successfully assigned all expected fields (2 numerical values).
+    const int expected_fields = 2;
+    if (assigned_fields != expected_fields) {
+        logerr("ERR: parsing error: content light level information");
+        return -1;
+    }
+    return 0; // Success
+}
+
+static int update_metadata(args_var_t *vars, oapvm_t mid)
+{
+    int ret = 0, size;
+    oapvm_payload_mdcv_t mdcv;
+    oapvm_payload_cll_t cll;
+    int is_mdcv, is_cll;
+    unsigned char payload[64];
+
+    is_mdcv = (strlen(vars->master_display) > 0)? 1: 0;
+    is_cll = (strlen(vars->max_cll) > 0)? 1: 0;
+
+    if(!is_mdcv && !is_cll) {
+        // no need to add metadata payload
+        return 0;
+    }
+
+    if(is_mdcv) {
+        if(parse_master_display(vars->master_display, &mdcv)) {
+            logerr("ERR: cannot parse master display information");
+            ret = -1;
+            goto ERR;
+        }
+        if(OAPV_FAILED(oapvm_write_mdcv(&mdcv, payload, &size))) {
+            logerr("ERR: cannot get master display information bitstream");
+            ret = -1;
+            goto ERR;
+        }
+        if(OAPV_FAILED(oapvm_set(mid, 1, OAPV_METADATA_MDCV, payload, size))) {
+            logerr("ERR: cannot set master display information to handler");
+            ret = -1;
+            goto ERR;
+        }
+    }
+
+    if(is_cll) {
+        if(parse_max_cll(vars->max_cll, &cll)) {
+            logerr("ERR: cannot parse contents light level information");
+            ret = -1;
+            goto ERR;
+        }
+        if(OAPV_FAILED(oapvm_write_cll(&cll, payload, &size))) {
+            logerr("ERR: cannot get contents light level information bitstream");
+            ret = -1;
+            goto ERR;
+        }
+        if(OAPV_FAILED(oapvm_set(mid, 1, OAPV_METADATA_CLL, payload, size))) {
+            logerr("ERR: cannot set contents light level information to handler");
+            ret = -1;
+            goto ERR;
+        }
+    }
+
+ERR:
+    return ret;
+}
+
 int main(int argc, const char **argv)
 {
     args_parser_t *args = NULL;
@@ -952,6 +1058,7 @@ int main(int argc, const char **argv)
     id = oapve_create(&cdesc, &ret);
     if(id == NULL) {
         logerr("ERR: cannot create OAPV encoder\n");
+        ret = -1;
         goto ERR;
     }
 
@@ -1032,6 +1139,13 @@ int main(int argc, const char **argv)
             rfrms.num_frms++;
         }
         ifrms.num_frms++;
+    }
+
+    /* ready metadata if needs */
+    if(update_metadata(args_var, mid)) {
+        logerr("ERR: failed to update metadata");
+        ret = -1;
+        goto ERR;
     }
 
     /* encode pictures *******************************************************/
