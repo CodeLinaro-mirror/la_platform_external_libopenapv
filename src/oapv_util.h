@@ -38,6 +38,10 @@
 #define oapv_min(a, b)               (((a) < (b)) ? (a) : (b))
 #define oapv_median(x, y, z)         ((((y) < (z)) ^ ((z) < (x))) ? (((x) < (y)) ^ ((z) < (x))) ? (y) : (x) : (z))
 
+#define oapv_div_round_up(n, d)      ((int)(((n) + (d) - 1) / (d)))
+#define oapv_div_round_closest(n, d) ((int)(((n) + (d)/2)/(d)))
+
+
 #define oapv_abs(a)                  (((a) > (0)) ? (a) : (-(a)))
 #define oapv_abs64(a)                (((a) ^ ((a) >> 63)) - ((a) >> 63)) // only for 64bit variable
 #define oapv_abs32(a)                (((a) ^ ((a) >> 31)) - ((a) >> 31)) // only for 32bit variable
@@ -57,6 +61,10 @@
 // macro to get a sign from a 16-bit value.
 // operation: if(val < 0) return 1, else return 0
 #define oapv_get_sign16(val)         (((val) >> 15) & 1)
+
+// macro to get a sign from a 32-bit value.
+// operation: if(val < 0) return 1, else return 0
+#define oapv_get_sign32(val)         (((val) >> 31) & 1)
 
 // macro to set sign to a 16-bit value.
 // operation: if(sign == 0) return val, else if(sign == 1) return -val
