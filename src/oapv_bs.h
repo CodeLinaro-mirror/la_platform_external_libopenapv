@@ -135,11 +135,8 @@ should set zero in that case. */
     (bs)->leftbits = 0;
 
 void oapv_bsr_init(oapv_bs_t *bs, u8 *buf, u32 size, oapv_bs_fn_flush_t fn_flush);
-int oapv_bsr_clz_in_code(u32 code);
-int oapv_bsr_clz(oapv_bs_t *bs);
 void oapv_bsr_align8(oapv_bs_t *bs);
 void oapv_bsr_skip(oapv_bs_t *bs, int size);
-u32 oapv_bsr_peek(oapv_bs_t *bs, int size);
 void *oapv_bsr_sink(oapv_bs_t *bs);
 void oapv_bsr_move(oapv_bs_t *bs, u8 *pos);
 u32 oapv_bsr_read(oapv_bs_t *bs, int size);
