@@ -1118,10 +1118,10 @@ int oapvd_vlc_metadata(oapv_bs_t *bs, u32 pbu_size, oapvm_t mid, int group_id)
     DUMP_HLS(metadata_size, metadata_size);
     oapv_assert_gv(pbu_size >= 8 && metadata_size <= (pbu_size - 8), ret, OAPV_ERR_MALFORMED_BITSTREAM, ERR);
     u8 *bs_start_pos = bs->cur;
-    u8 *payload_data = NULL;
 
     while(metadata_size > 0) {
         u32 payload_type = 0, payload_size = 0;
+        u8 *payload_data = NULL;
         t0 = 0;
         do {
             t0 = oapv_bsr_read(bs, 8);
