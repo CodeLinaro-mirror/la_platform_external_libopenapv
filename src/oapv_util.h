@@ -143,6 +143,8 @@ typedef struct
 
 /* MD5 Functions */
 void oapv_imgb_set_md5(oapv_imgb_t *imgb);
+void oapv_imgb_clr_md5(oapv_imgb_t *imgb);
+
 void oapv_block_copy(s16 *src, int src_stride, s16 *dst, int dst_stride, int log2_copy_w, int log2_copy_h);
 int oapv_set_md5_pld(oapvm_t mid, int group_id, oapv_imgb_t *rec);
 
