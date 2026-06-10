@@ -623,6 +623,8 @@ static int dec_vlc_read_kparam0(oapv_bs_t *bs)
             k++;
         }
     }
+    oapv_assert_rv(k < 32, -1); /* prevent too large (impossible) k value */
+
     if(k > 0) {
         symbol += ((u32)0xFFFFFFFF) >> (32 - k);
 
@@ -709,6 +711,9 @@ static int dec_vlc_read(oapv_bs_t *bs, int k)
             }
         }
     }
+
+    oapv_assert_rv(k < 32, -1); /* prevent too large (impossible) k value */
+
     if(k > 0) {
         while(bs->leftbits < k) {
             symbol += bs->code >> (32 - k);
@@ -830,6 +835,8 @@ int oapvd_vlc_ac_coef(oapv_bs_t *bs, s16 *coef, int *kparam_ac)
         else {
             run = dec_vlc_read(bs, k_run);
         }
+
+        oapv_assert_rv(run >= 0, OAPV_ERR_MALFORMED_BITSTREAM);
 
         // here, no need to set 'zero-run' in coef; it's already initialized to zero.
 
@@ -1061,18 +1068,27 @@ int oapvd_vlc_tile_size(oapv_bs_t *bs, u32 *tile_size)
     return OAPV_OK;
 }
 
-int oapvd_vlc_tile_header(oapv_bs_t *bs, oapvd_ctx_t *ctx, oapv_th_t *th)
+int oapvd_vlc_tile_header(oapv_bs_t *bs, int num_comp, oapv_th_t *th, u32 tile_size)
 {
+    u32 read_size = 0;
+
     th->tile_header_size = oapv_bsr_read(bs, 16);
     DUMP_HLS(th->tile_header_size, th->tile_header_size);
+
+    // check 'tile_header_size' syntax value
+    // # of bytes = tile_header_size (2) + tile_index (2) + reserved_zero_8bits (1) + num_comp * (tile_data_size(4) + tile_qp(1))
+    oapv_assert_rv(th->tile_header_size == (5 + (num_comp*5)), OAPV_ERR_MALFORMED_BITSTREAM)
+    read_size += th->tile_header_size;
+
     th->tile_index = oapv_bsr_read(bs, 16);
     DUMP_HLS(th->tile_index, th->tile_index);
-    for(int c = 0; c < ctx->num_comp; c++) {
+    for(int c = 0; c < num_comp; c++) {
         th->tile_data_size[c] = oapv_bsr_read(bs, 32);
         DUMP_HLS(th->tile_data_size, th->tile_data_size[c]);
-        oapv_assert_rv(th->tile_data_size[c] > 0, OAPV_ERR_MALFORMED_BITSTREAM);
+        oapv_assert_rv((tile_size - read_size) >= th->tile_data_size[c], OAPV_ERR_MALFORMED_BITSTREAM);
+        read_size += th->tile_data_size[c];
     }
-    for(int c = 0; c < ctx->num_comp; c++) {
+    for(int c = 0; c < num_comp; c++) {
         th->tile_qp[c] = oapv_bsr_read(bs, 8);
         DUMP_HLS(th->tile_qp, th->tile_qp[c]);
     }
