@@ -1,7 +1,7 @@
-![OAPV](/readme/img/oapv_logo_bar_256.png)
+![OAPV](/readme/img/oapv_logo_black_bar_256.png#gh-light-mode-only) ![OAPV](/readme/img/oapv_logo_white_bar_256.png#gh-dark-mode-only)
 # OpenAPV (Open Advanced Professional Video Codec)
 
-[![Build and test](https://github.com/openapv/openapv/actions/workflows/build.yml/badge.svg)](https://github.com/openapv/openapv/actions/workflows/build.yml)
+[![Build and test](https://github.com/AcademySoftwareFoundation/openapv/actions/workflows/build.yml/badge.svg)](https://github.com/AcademySoftwareFoundation/openapv/actions/workflows/build.yml)
 
 OpenAPV provides the reference implementation of the [APV codec](#apv-codec) which can be used to record professional-grade video and associated metadata without quality degradation. OpenAPV is free and open source software provided by [LICENSE](#license).
 
@@ -17,7 +17,7 @@ The OpenAPV supports the following features:
 ## APV codec
 The APV codec is a professional video codec, which was developed in response to the need for professional level high quality video recording and post production. The primary purpose of the APV codec is for use in professional video recording and editing workflows for various types of content.
 
-APV codec utilizes technologies known to be over 20 years to achieve a royalty free codec. APV builds a video codec using only conventional coding technologies, which consist of traditional methods published between the early 1980s and the end of the 1990s.
+APV codec utilizes technologies known to be over 20 years old to achieve a royalty free codec. APV builds a video codec using only conventional coding technologies, which consist of traditional methods published between the early 1980s and the end of the 1990s.
 
 The APV codec standard has the following features:
 
@@ -28,7 +28,7 @@ The APV codec standard has the following features:
 - Support for various chroma sampling formats from 4:2:2 to 4:4:4, and bit-depths from 10 to 16
 - Support for multiple decoding and re-encoding without severe visual quality degradation
 - Support multi-view video and auxiliary video like depth, alpha, and preview
-- Support various metadata including HDR10/10+ and user-definded format
+- Support various metadata including HDR10/10+ and user-defined format
 
 ### Related specification
 - APV Codec (bitstream): [https://datatracker.ietf.org/doc/draft-lim-apv/](https://datatracker.ietf.org/doc/draft-lim-apv/)
@@ -44,7 +44,7 @@ The APV codec standard has the following features:
   For ARM
   - gcc-aarch64-linux-gnu
   - binutils-aarch64-linux-gnu
- 
+
   For Windows (crosscompile)
   - mingw-w64
   - mingw-w64-tools
@@ -57,13 +57,13 @@ The APV codec standard has the following features:
 
 - Build Instructions ARM (Crosscompile)
   ```
-  cmake -S . -B build-arm -DCMAKE_TOOLCHAIN_FILE=aarch64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release 
+  cmake -S . -B build-arm -DCMAKE_TOOLCHAIN_FILE=aarch64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
   cmake --build build-arm
   ```
 
 - Build Instructions Windows (Crosscompile)
   ```
-  cmake -S . -B build-windows -DCMAKE_TOOLCHAIN_FILE=windows_x86_64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release 
+  cmake -S . -B build-windows -DCMAKE_TOOLCHAIN_FILE=windows_x86_64_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
   cmake --build build-windows
   ```
 
@@ -71,10 +71,10 @@ The APV codec standard has the following features:
   - Executable applications can be found under build*/bin/
   - Library files can be found under build*/lib/
 
-## How to use
+## How to use applications
 ### Encoder
 
-Encoder as input require raw YCbCr file (422, 444), 10-bit or more.
+Encoder requires raw YCbCr file (422, 444), 10-bit or more, as input.
 
 Displaying help:
 
@@ -103,9 +103,9 @@ Decoding:
 
 Pattern file of APV bitstream for [ImHex](https://github.com/WerWolv/ImHex) is provided [here](/util/apv.hexpat).
 1. Install [ImHex](https://github.com/WerWolv/ImHex) application
-2. Download [APV pattern file](/util/apv.hexpat)
-2. Open APV bitstream (\*.apv file) with ImHex
-3. Import the APV pattern file on Pattern editor view of ImHex and apply
+2. Download [APV pattern file](/util/apv.hexpat) and copy it to 'patterns' directory of the ImHex application
+3. Open an APV bitstream (*.apv file) file with the ImHex application
+4. The APV pattern file will be selected automatically and press 'yes' to apply it
 
 ![APV_on_ImHex](/readme/img/apv_parser_on_imhex.png)
 
@@ -117,10 +117,18 @@ In build directory run ``ctest``
 
 For generating package ready for distribution (default deb) execute in build directory ``cpack``,  or other formats (tgz, zip etc.) ``cpack -G TGZ``.
 
+## Versioning
+
+This project is using the following versioning scheme ``API-SET.MAJOR.MINOR.PATCH``. It's mostly based on Semantic Versioning with addition of ``API-SET`` on first place.
+Project and library share a common version number.
+
 ## License
 
 See [LICENSE](LICENSE) file for details.
 
 ## Graphic logo
-![OAPV](/readme/img/oapv_logo_bar_64.png) ![OAPV](/readme/img/oapv_logo_bar_128.png) ![OAPV](/readme/img/oapv_logo_bar_256.png)
-![OAPV](/readme/img/oapv_logo_btn_64.png) ![OAPV](/readme/img/oapv_logo_btn_96.png) ![OAPV](/readme/img/oapv_logo_btn_128.png)
+### logo for light mode
+![OAPV](/readme/img/oapv_logo_black_bar_64.png) ![OAPV](/readme/img/oapv_logo_black_bar_128.png) ![OAPV](/readme/img/oapv_logo_black_bar_256.png)
+
+### logo for dark mode
+![OAPV](/readme/img/oapv_logo_white_bar_64.png) ![OAPV](/readme/img/oapv_logo_white_bar_128.png) ![OAPV](/readme/img/oapv_logo_white_bar_256.png)

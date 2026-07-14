@@ -47,8 +47,6 @@ struct oapv_bs {
     oapv_bs_fn_flush_t fn_flush; // function pointer for flush operation
     int                ndata[4]; // arbitrary data, if needs
     void              *pdata[4]; // arbitrary address, if needs
-    char               is_bin_count;
-    u32                bin_count;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -69,7 +67,7 @@ static inline int bsw_get_write_byte(oapv_bs_t *bs)
 void oapv_bsw_init(oapv_bs_t *bs, u8 *buf, int size, oapv_bs_fn_flush_t fn_flush);
 void oapv_bsw_deinit(oapv_bs_t *bs);
 void *oapv_bsw_sink(oapv_bs_t *bs);
-int oapv_bsw_write_direct(void *bits, u32 val, int len);
+int oapv_bsw_write_direct(void *addr, u32 val, int len);
 int oapv_bsw_write1(oapv_bs_t *bs, int val);
 int oapv_bsw_write(oapv_bs_t *bs, u32 val, int len);
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,18 +99,18 @@ should set zero in that case. */
 #endif
 
 /*! Is end of bitstream ? */
-#define BSR_IS_EOB(bs) (((bs)->cur > (bs)->end && (bs)->leftbits==0)? 1: 0)
+#define BSR_IS_EOB(bs) (((bs)->cur >= (bs)->end && (bs)->leftbits==0)? 1: 0)
 
 /*! Is bitstream byte aligned? */
 #define BSR_IS_BYTE_ALIGN(bs) ((((bs)->leftbits & 0x7) == 0)? 1: 0)
 
-/*! Is last byte of bitsteam? */
+/*! Is last byte of bitstream? */
 #define BSR_IS_LAST_BYTE(bs) \
-    (((bs)->cur > (bs)->end && bs->leftbits > 0 && (bs)->leftbits <= 8)? 1: 0)
+    (((bs)->cur >= (bs)->end && bs->leftbits > 0 && (bs)->leftbits <= 8)? 1: 0)
 
 /* get left byte count in BS */
 #define BSR_GET_LEFT_BYTE(bs) \
-    ((int)((bs)->end - (bs)->cur) + 1 + ((bs)->leftbits >> 3))
+    ((int)((bs)->end - (bs)->cur) + ((bs)->leftbits >> 3))
 /* get number of byte consumed */
 #define BSR_GET_READ_BYTE(bs) \
     ((int)((bs)->cur - (bs)->beg) - ((bs)->leftbits >> 3))
