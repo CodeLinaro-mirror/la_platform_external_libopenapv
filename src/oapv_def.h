@@ -341,7 +341,7 @@ struct oapvd_tile {
     int          y;         /* y (row) position in a frame in unit of pixel */
     int          w;         /* tile width in unit of pixel */
     int          h;         /* tile height in unit of pixel */
-    u32          data_size; /* tile size including tile_size syntax */
+    u32          tile_size; /* tile data size (byte size of tile(tileIdx) syntax) */
 
     u8          *bs_beg; /* start position of tile in input bistream */
     u8          *bs_end; /* end position of tile() in input bistream */

@@ -277,6 +277,11 @@ void oapv_imgb_set_md5(oapv_imgb_t *imgb)
     }
 }
 
+void oapv_imgb_clr_md5(oapv_imgb_t *imgb)
+{
+    oapv_mset(imgb->hash, 0, sizeof(imgb->hash));
+}
+
 int oapv_set_md5_pld(oapvm_t mid, int group_id, oapv_imgb_t *rec)
 {
     oapv_imgb_set_md5(rec);
